@@ -42,7 +42,16 @@ def on_login_success(user):
     
     # Utwórz nowe główne okno
     main_window = tk.Toplevel(all_windows[0])
-    all_windows.append(main_window)
+    
+    # Wyczyść poprzednie okna, poza root i nowym głównym oknem
+    for window in all_windows[1:]:
+        try:
+            window.destroy()
+        except:
+            pass
+    
+    # Zresetuj listę okien
+    all_windows = [all_windows[0], main_window]
     
     # Obsługa zamykania
     main_window.protocol("WM_DELETE_WINDOW", lambda: close_application())

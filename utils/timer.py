@@ -77,12 +77,17 @@ class TaskTimer:
     
     def reset(self):
         """Resetuje timer"""
-        if self.running:
-            self.stop()
+        # Ustaw flagę stop_thread, aby wątek wiedział, że ma się zakończyć
+        self.stop_thread = True
         
+        # Poczekaj chwilę, aby dać wątkowi czas na zauważenie flagi
+        time.sleep(0.1)
+        
+        # Resetuj wszystkie zmienne
         self.elapsed_seconds = 0
         self.start_time = None
         self.running = False
+        self.timer_thread = None
     
     def _update_timer(self):
         """Wątek aktualizujący timer co sekundę"""

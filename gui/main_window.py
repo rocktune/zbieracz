@@ -136,15 +136,28 @@ class MainWindow:
         ):
             return
         
+        # Zatrzymaj wszystkie aktywne timery
+        if hasattr(self, 'task_panel') and hasattr(self.task_panel, 'timer'):
+            self.task_panel.timer.reset()
+        
         # Wyloguj użytkownika
         self.auth_manager.logout()
         
-        # Zamknij główne okno
-        self.root.destroy()
+        # Ukryj główne okno
+        self.root.withdraw()
+        
+        # Zamknij wszystkie otwarte okna poza głównym i root
+        for widget in self.root.winfo_children():
+            if isinstance(widget, tk.Toplevel):
+                widget.destroy()
         
         # Uruchom ponownie logowanie
-        from main import start_application
-        start_application()
+        from main import on_login_success, all_windows
+        
+        # Utwórz nowe okno logowania
+        login_window = tk.Toplevel(all_windows[0])
+        from gui.login import LoginWindow
+        login_app = LoginWindow(login_window, on_login_success=on_login_success)
         
     def _on_close(self):
         """Obsługuje zamykanie okna aplikacji"""
@@ -157,7 +170,6 @@ class MainWindow:
                     
             # Zamknij główne okno
             self.root.destroy()
-    
     def _change_db_path(self):
         """Zmienia ścieżkę do bazy danych"""
         # Pobierz nową ścieżkę

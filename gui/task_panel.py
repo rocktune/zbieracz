@@ -22,6 +22,8 @@ class TaskPanel(ttk.Frame):
         self.parent = parent
         self.current_user = current_user
         self.is_admin = is_admin
+        
+        # Inicjalizacja timera
         self.timer = TaskTimer(self._update_timer_display)
         
         # Zmienne do przechowywania danych formularza
@@ -36,6 +38,11 @@ class TaskPanel(ttk.Frame):
         # Stan UI
         self.active_task = False
         self.selected_task_id = None
+        
+        # Słowniki do przechowywania danych
+        self.implementations = {}
+        self.offers = {}
+        self.users = {}
         
         # Stwórz widgety
         self._create_widgets()

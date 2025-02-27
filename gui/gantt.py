@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import datetime
 import calendar
-from dateutil.relativedelta import relativedelta
 from database.models import User, Implementation, Offer
 
 class GanttPanel(ttk.Frame):
@@ -31,9 +30,10 @@ class GanttPanel(ttk.Frame):
         self.current_user = current_user
         self.is_admin = is_admin
         
-        # Daty
-        self.start_date = datetime.date.today().replace(day=1)  # Pierwszy dzień bieżącego miesiąca
-        self.end_date = self.start_date + relativedelta(months=2, days=-1)  # Ostatni dzień za 2 miesiące
+        # Daty - używamy first_day_of_month i last_day_of_month, aby uniknąć błędu
+        self.start_date = self._first_day_of_month(datetime.date.today())
+        # Ostatni dzień za 2 miesiące (bezpieczna metoda)
+        self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
         
         # Zmienne
         self.user_filter_var = tk.StringVar()
@@ -49,6 +49,27 @@ class GanttPanel(ttk.Frame):
         
         # Załaduj dane
         self._load_data()
+        
+    def _first_day_of_month(self, date):
+        """Zwraca pierwszy dzień miesiąca dla podanej daty"""
+        return date.replace(day=1)
+        
+    def _last_day_of_month(self, date):
+        """Zwraca ostatni dzień miesiąca dla podanej daty"""
+        # Przejdź do pierwszego dnia następnego miesiąca i cofnij o jeden dzień
+        if date.month == 12:
+            next_month = date.replace(year=date.year+1, month=1, day=1)
+        else:
+            next_month = date.replace(month=date.month+1, day=1)
+        
+        return next_month - datetime.timedelta(days=1)
+        
+    def _add_months(self, date, months):
+        """Dodaje podaną liczbę miesięcy do daty w bezpieczny sposób"""
+        month = date.month - 1 + months
+        year = date.year + month // 12
+        month = month % 12 + 1
+        return date.replace(year=year, month=month, day=1)
     
     def _create_widgets(self):
         """Tworzy widgety panelu Gantta"""
@@ -170,8 +191,14 @@ class GanttPanel(ttk.Frame):
     
     def _change_date_range(self, months):
         """Zmienia zakres dat o podaną liczbę miesięcy"""
-        self.start_date = self.start_date + relativedelta(months=months)
-        self.end_date = self.start_date + relativedelta(months=2, days=-1)
+        if months > 0:
+            # Przesuwanie w przód
+            self.start_date = self._add_months(self.start_date, months) 
+            self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
+        else:
+            # Przesuwanie w tył
+            self.start_date = self._add_months(self.start_date, months)
+            self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
         
         # Aktualizuj etykietę
         self._update_date_label()
