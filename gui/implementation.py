@@ -4,7 +4,7 @@ from tkinter import ttk, messagebox
 from tkinter import filedialog
 from tkcalendar import DateEntry
 import datetime
-from database.models import Implementation, User
+from database.models import Implementation, Offer, User, WorkloadLimits
 from utils.export import export_implementations_to_excel
 
 class ImplementationPanel(ttk.Frame):
@@ -788,7 +788,7 @@ class ImplementationPanel(ttk.Frame):
             "Sukces", 
             f"Przypisania użytkowników do wdrożenia '{implementation.name}' zostały zaktualizowane."
         )
-    
+
     def _auto_assign_users(self):
         """Automatycznie przydziela użytkowników do wdrożeń"""
         # Pobierz wszystkich użytkowników
@@ -801,29 +801,73 @@ class ImplementationPanel(ttk.Frame):
         # Pobierz wszystkie wdrożenia o statusie "W trakcie"
         implementations = [impl for impl in Implementation.get_all() if impl.status == "W trakcie"]
         
-        if not implementations:
-            messagebox.showinfo("Informacja", "Brak wdrożeń w trakcie do przypisania.")
+        # Pobierz wszystkie oferty o statusie "W trakcie"
+        offers = [offer for offer in Offer.get_all() if offer.status == "W trakcie"]
+        
+        if not implementations and not offers:
+            messagebox.showinfo("Informacja", "Brak projektów w trakcie do przypisania.")
             return
         
         # Potwierdź operację
         if not messagebox.askyesno(
             "Potwierdzenie",
-            "Czy na pewno chcesz automatycznie przydzielić użytkowników do wdrożeń? "
+            "Czy na pewno chcesz automatycznie przydzielić użytkowników do wdrożeń i ofert? "
             "Istniejące przypisania zostaną nadpisane."
         ):
             return
         
+        # Pobierz limity obciążenia
+        workload_limits = WorkloadLimits.get_limits()
+        
         # Inicjalizuj obciążenie użytkowników
-        # słownik user_id -> słownik data -> liczba zadań
-        user_load = {user.id: {} for user in users}
+        # słownik user_id -> słownik z licznikami wdrożeń, ofert i całkowitych projektów oraz datami zajętymi
+        user_load = {}
+        user_skills = {}
+        
+        for user in users:
+            user_load[user.id] = {
+                "implementations_count": 0,
+                "offers_count": 0,
+                "total_projects": 0,
+                "dates": {}  # data -> liczba zadań
+            }
+            
+            # Określ umiejętności użytkownika na podstawie ról
+            user_roles = user.get_roles()
+            user_skills[user.id] = {
+                "can_implementation": False,
+                "can_offer": False,
+                "can_welding": False,
+                "can_painting": False,
+                "can_gluing": False
+            }
+            
+            for role in user_roles:
+                # Sprawdź uprawnienia roli
+                if role.permissions.get("task_implementation", False):
+                    user_skills[user.id]["can_implementation"] = True
+                if role.permissions.get("task_offer", False):
+                    user_skills[user.id]["can_offer"] = True
+                if role.permissions.get("task_welding", False):
+                    user_skills[user.id]["can_welding"] = True
+                if role.permissions.get("task_painting", False):
+                    user_skills[user.id]["can_painting"] = True
+                if role.permissions.get("task_gluing", False):
+                    user_skills[user.id]["can_gluing"] = True
         
         # Przygotuj dane o użytkownikach
         user_dict = {user.id: user for user in users}
         
+        # Pobierz aktualne obciążenie z istniejących wdrożeń i ofert
+        self._calculate_current_workload(implementations, offers, user_load)
+        
         # Posortuj wdrożenia według daty rozpoczęcia
         implementations.sort(key=lambda impl: impl.operations.get("Wdrożenie", {}).get("start_date", "9999-99-99"))
         
-        # Przypisz użytkowników do wdrożeń
+        # Posortuj oferty według daty rozpoczęcia
+        offers.sort(key=lambda offer: offer.operations.get("Wdrożenie", {}).get("start_date", "9999-99-99"))
+        
+        # Najpierw przydziel główne operacje wdrożeń
         for impl in implementations:
             # Pobierz zakres dat głównego wdrożenia
             main_op = impl.operations.get("Wdrożenie", {})
@@ -833,13 +877,55 @@ class ImplementationPanel(ttk.Frame):
             if not main_start or not main_end:
                 continue  # Pomijamy wdrożenia bez dat
             
-            # Przypisz użytkownika do głównej operacji
-            self._assign_user_to_operation(
-                impl, "Wdrożenie", main_start, main_end, user_load, user_dict
+            # Znajdź najlepszego użytkownika do głównej operacji wdrożenia
+            best_user_id = self._find_best_user(
+                "implementation", main_start, main_end, user_load, user_skills, workload_limits
             )
             
-            # Przypisz użytkowników do pozostałych operacji
+            if best_user_id:
+                impl.operations["Wdrożenie"]["user_id"] = best_user_id
+                self._update_user_workload(user_load, best_user_id, "implementation", main_start, main_end)
+        
+        # Następnie przydziel główne operacje ofert
+        for offer in offers:
+            # Pobierz zakres dat głównej oferty
+            main_op = offer.operations.get("Wdrożenie", {})
+            main_start = main_op.get("start_date")
+            main_end = main_op.get("end_date")
+            
+            if not main_start or not main_end:
+                continue  # Pomijamy oferty bez dat
+            
+            # Znajdź najlepszego użytkownika do głównej operacji oferty
+            best_user_id = self._find_best_user(
+                "offer", main_start, main_end, user_load, user_skills, workload_limits
+            )
+            
+            if best_user_id:
+                offer.operations["Wdrożenie"]["user_id"] = best_user_id
+                self._update_user_workload(user_load, best_user_id, "offer", main_start, main_end)
+        
+        # Przydziel pozostałe operacje dla wdrożeń
+        for impl in implementations:
+            # Pobierz zakres dat głównego wdrożenia
+            main_op = impl.operations.get("Wdrożenie", {})
+            main_start = main_op.get("start_date")
+            main_end = main_op.get("end_date")
+            
+            if not main_start or not main_end:
+                continue  # Pomijamy wdrożenia bez dat
+            
+            # Przydziel użytkowników do pozostałych operacji
             for operation_name in ["Spawanie", "Malowanie", "Klejenie"]:
+                # Określ typ umiejętności potrzebnej do operacji
+                skill_type = ""
+                if operation_name == "Spawanie":
+                    skill_type = "welding"
+                elif operation_name == "Malowanie":
+                    skill_type = "painting"
+                elif operation_name == "Klejenie":
+                    skill_type = "gluing"
+                
                 # Pobierz daty z operacji lub użyj głównych dat
                 op_data = impl.operations.get(operation_name, {})
                 op_start = op_data.get("start_date", main_start)
@@ -850,13 +936,62 @@ class ImplementationPanel(ttk.Frame):
                 op_end = min(op_end, main_end)
                 
                 # Przypisz użytkownika
-                self._assign_user_to_operation(
-                    impl, operation_name, op_start, op_end, user_load, user_dict
+                best_user_id = self._find_best_user(
+                    skill_type, op_start, op_end, user_load, user_skills, workload_limits
                 )
+                
+                if best_user_id:
+                    impl.operations[operation_name]["user_id"] = best_user_id
+                    # Operacje specjalistyczne nie zwiększają licznika projektów, tylko obciążenie dzienne
+                    self._update_user_workload(user_load, best_user_id, "specialist", op_start, op_end)
+        
+        # Przydziel pozostałe operacje dla ofert
+        for offer in offers:
+            # Pobierz zakres dat głównej oferty
+            main_op = offer.operations.get("Wdrożenie", {})
+            main_start = main_op.get("start_date")
+            main_end = main_op.get("end_date")
+            
+            if not main_start or not main_end:
+                continue  # Pomijamy oferty bez dat
+            
+            # Przydziel użytkowników do pozostałych operacji
+            for operation_name in ["Spawanie", "Malowanie", "Klejenie"]:
+                # Określ typ umiejętności potrzebnej do operacji
+                skill_type = ""
+                if operation_name == "Spawanie":
+                    skill_type = "welding"
+                elif operation_name == "Malowanie":
+                    skill_type = "painting"
+                elif operation_name == "Klejenie":
+                    skill_type = "gluing"
+                
+                # Pobierz daty z operacji lub użyj głównych dat
+                op_data = offer.operations.get(operation_name, {})
+                op_start = op_data.get("start_date", main_start)
+                op_end = op_data.get("end_date", main_end)
+                
+                # Upewnij się, że daty mieszczą się w zakresie głównej oferty
+                op_start = max(op_start, main_start)
+                op_end = min(op_end, main_end)
+                
+                # Przypisz użytkownika
+                best_user_id = self._find_best_user(
+                    skill_type, op_start, op_end, user_load, user_skills, workload_limits
+                )
+                
+                if best_user_id:
+                    offer.operations[operation_name]["user_id"] = best_user_id
+                    # Operacje specjalistyczne nie zwiększają licznika projektów, tylko obciążenie dzienne
+                    self._update_user_workload(user_load, best_user_id, "specialist", op_start, op_end)
         
         # Zapisz wszystkie wdrożenia
         for impl in implementations:
             impl.save()
+        
+        # Zapisz wszystkie oferty
+        for offer in offers:
+            offer.save()
         
         # Odśwież listę wdrożeń
         self._load_implementations()
@@ -864,52 +999,212 @@ class ImplementationPanel(ttk.Frame):
         # Wyświetl komunikat
         messagebox.showinfo(
             "Sukces", 
-            "Automatyczne przydzielanie użytkowników do wdrożeń zostało zakończone."
+            "Automatyczne przydzielanie użytkowników do projektów zostało zakończone."
         )
-    
-    def _assign_user_to_operation(self, implementation, operation_name, start_date, end_date, user_load, user_dict):
-        """Przypisuje użytkownika do operacji na podstawie obciążenia"""
-        # Przygotuj daty do iteracji
-        current_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
-        end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+
+    def _calculate_current_workload(self, implementations, offers, user_load):
+        """Oblicza aktualne obciążenie użytkowników na podstawie istniejących przypisań"""
+        # Przetwarzaj wdrożenia
+        for impl in implementations:
+            for operation_name, op_data in impl.operations.items():
+                user_id = op_data.get("user_id")
+                start_date = op_data.get("start_date")
+                end_date = op_data.get("end_date")
+                
+                if user_id and start_date and end_date:
+                    if operation_name == "Wdrożenie":
+                        # Zwiększ licznik wdrożeń i projektów
+                        if user_id in user_load:
+                            user_load[user_id]["implementations_count"] += 1
+                            user_load[user_id]["total_projects"] += 1
+                    
+                    # Dodaj obciążenie dzienne
+                    self._add_daily_workload(user_load, user_id, start_date, end_date)
         
-        # Znajdź użytkownika z najmniejszym obciążeniem w tym okresie
+        # Przetwarzaj oferty
+        for offer in offers:
+            for operation_name, op_data in offer.operations.items():
+                user_id = op_data.get("user_id")
+                start_date = op_data.get("start_date")
+                end_date = op_data.get("end_date")
+                
+                if user_id and start_date and end_date:
+                    if operation_name == "Wdrożenie":
+                        # Zwiększ licznik ofert i projektów
+                        if user_id in user_load:
+                            user_load[user_id]["offers_count"] += 1
+                            user_load[user_id]["total_projects"] += 1
+                    
+                    # Dodaj obciążenie dzienne
+                    self._add_daily_workload(user_load, user_id, start_date, end_date)
+
+    def _add_daily_workload(self, user_load, user_id, start_date, end_date):
+        """Dodaje obciążenie dzienne dla użytkownika w podanym okresie"""
+        if user_id not in user_load:
+            return
+        
+        try:
+            # Przygotuj daty do iteracji
+            start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+            
+            # Dodaj obciążenie dla każdego dnia
+            date_obj = start_date_obj
+            while date_obj <= end_date_obj:
+                date_str = date_obj.strftime("%Y-%m-%d")
+                
+                if date_str not in user_load[user_id]["dates"]:
+                    user_load[user_id]["dates"][date_str] = 0
+                
+                user_load[user_id]["dates"][date_str] += 1
+                date_obj += datetime.timedelta(days=1)
+        except ValueError:
+            # Ignoruj nieprawidłowe daty
+            pass
+
+    def _find_best_user(self, task_type, start_date, end_date, user_load, user_skills, workload_limits):
+        """
+        Znajduje najlepszego użytkownika do przypisania zadania
+        
+        Args:
+            task_type (str): Typ zadania lub umiejętności ("implementation", "offer", "welding", itp.)
+            start_date (str): Data rozpoczęcia w formacie YYYY-MM-DD
+            end_date (str): Data zakończenia w formacie YYYY-MM-DD
+            user_load (dict): Słownik z obciążeniem użytkowników
+            user_skills (dict): Słownik z umiejętnościami użytkowników
+            workload_limits (WorkloadLimits): Limity obciążenia
+            
+        Returns:
+            int: ID najlepszego użytkownika lub None jeśli nie znaleziono
+        """
         best_user_id = None
         best_load = float("inf")
         
-        for user_id in user_load:
-            # Oblicz obciążenie użytkownika w okresie
-            user_total_load = 0
-            date_obj = current_date
+        try:
+            # Przygotuj daty do iteracji
+            start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            # Jeśli daty są nieprawidłowe, zwróć None
+            return None
+        
+        # Dla każdego użytkownika
+        for user_id, load_data in user_load.items():
+            # Sprawdź czy użytkownik ma odpowiednie umiejętności
+            if task_type == "implementation" and not user_skills[user_id]["can_implementation"]:
+                continue
+            elif task_type == "offer" and not user_skills[user_id]["can_offer"]:
+                continue
+            elif task_type == "welding" and not user_skills[user_id]["can_welding"]:
+                continue
+            elif task_type == "painting" and not user_skills[user_id]["can_painting"]:
+                continue
+            elif task_type == "gluing" and not user_skills[user_id]["can_gluing"]:
+                continue
+            
+            # Sprawdź limity projektów
+            if task_type == "implementation":
+                if load_data["implementations_count"] >= workload_limits.max_implementations:
+                    continue
+                if load_data["total_projects"] >= workload_limits.max_total_projects:
+                    continue
+            elif task_type == "offer":
+                if load_data["offers_count"] >= workload_limits.max_offers:
+                    continue
+                if load_data["total_projects"] >= workload_limits.max_total_projects:
+                    continue
+            
+            # Oblicz obciążenie użytkownika w okresie zadania
+            user_period_load = 0
+            date_obj = start_date_obj
             
             while date_obj <= end_date_obj:
                 date_str = date_obj.strftime("%Y-%m-%d")
-                user_total_load += user_load.get(user_id, {}).get(date_str, 0)
+                daily_load = load_data["dates"].get(date_str, 0)
+                
+                # Jeśli użytkownik ma już więcej niż 2 zadania w danym dniu, unikaj przydzielania kolejnych
+                if daily_load >= 2:
+                    user_period_load += 100  # Duża kara za przekroczenie dziennego limitu
+                else:
+                    user_period_load += daily_load
+                
                 date_obj += datetime.timedelta(days=1)
             
             # Sprawdź czy lepszy niż dotychczasowy
-            if user_total_load < best_load:
-                best_load = user_total_load
+            if user_period_load < best_load:
+                best_load = user_period_load
                 best_user_id = user_id
         
-        # Przypisz użytkownika do operacji
-        if best_user_id:
-            implementation.operations[operation_name] = {
-                "user_id": best_user_id,
-                "start_date": start_date,
-                "end_date": end_date
-            }
+        return best_user_id
+
+    def _update_user_workload(self, user_load, user_id, task_type, start_date, end_date):
+        """
+        Aktualizuje obciążenie użytkownika po przypisaniu zadania
+        
+        Args:
+            user_load (dict): Słownik z obciążeniem użytkowników
+            user_id (int): ID użytkownika
+            task_type (str): Typ zadania ("implementation", "offer", "specialist")
+            start_date (str): Data rozpoczęcia w formacie YYYY-MM-DD
+            end_date (str): Data zakończenia w formacie YYYY-MM-DD
+        """
+        if user_id not in user_load:
+            return
+        
+        # Aktualizuj liczniki projektów
+        if task_type == "implementation":
+            user_load[user_id]["implementations_count"] += 1
+            user_load[user_id]["total_projects"] += 1
+        elif task_type == "offer":
+            user_load[user_id]["offers_count"] += 1
+            user_load[user_id]["total_projects"] += 1
+        
+        # Dodaj obciążenie dzienne
+        self._add_daily_workload(user_load, user_id, start_date, end_date)
+        
+        def _assign_user_to_operation(self, implementation, operation_name, start_date, end_date, user_load, user_dict):
+            """Przypisuje użytkownika do operacji na podstawie obciążenia"""
+            # Przygotuj daty do iteracji
+            current_date = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+            end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
             
-            # Zaktualizuj obciążenie użytkownika
-            date_obj = current_date
-            while date_obj <= end_date_obj:
-                date_str = date_obj.strftime("%Y-%m-%d")
+            # Znajdź użytkownika z najmniejszym obciążeniem w tym okresie
+            best_user_id = None
+            best_load = float("inf")
+            
+            for user_id in user_load:
+                # Oblicz obciążenie użytkownika w okresie
+                user_total_load = 0
+                date_obj = current_date
                 
-                if date_str not in user_load[best_user_id]:
-                    user_load[best_user_id][date_str] = 0
+                while date_obj <= end_date_obj:
+                    date_str = date_obj.strftime("%Y-%m-%d")
+                    user_total_load += user_load.get(user_id, {}).get(date_str, 0)
+                    date_obj += datetime.timedelta(days=1)
                 
-                user_load[best_user_id][date_str] += 1
-                date_obj += datetime.timedelta(days=1)
+                # Sprawdź czy lepszy niż dotychczasowy
+                if user_total_load < best_load:
+                    best_load = user_total_load
+                    best_user_id = user_id
+            
+            # Przypisz użytkownika do operacji
+            if best_user_id:
+                implementation.operations[operation_name] = {
+                    "user_id": best_user_id,
+                    "start_date": start_date,
+                    "end_date": end_date
+                }
+                
+                # Zaktualizuj obciążenie użytkownika
+                date_obj = current_date
+                while date_obj <= end_date_obj:
+                    date_str = date_obj.strftime("%Y-%m-%d")
+                    
+                    if date_str not in user_load[best_user_id]:
+                        user_load[best_user_id][date_str] = 0
+                    
+                    user_load[best_user_id][date_str] += 1
+                    date_obj += datetime.timedelta(days=1)
     
     def _export_to_excel(self):
         """Eksportuje wdrożenia do pliku Excel"""

@@ -272,6 +272,7 @@ class Task:
         self.implementation_id = implementation_id
         self.offer_id = offer_id
     
+
     @staticmethod
     def create_tables():
         """Tworzy tabelę zadań w bazie danych"""
@@ -295,7 +296,8 @@ class Task:
             FOREIGN KEY (offer_id) REFERENCES offers (id) ON DELETE SET NULL
         )
         ''')
-        
+     
+            
         conn.commit()
     
     @staticmethod
@@ -870,6 +872,8 @@ class Role:
         self.description = description
         self.permissions = permissions or {}  # Słownik uprawnień: nazwa_uprawnienia -> True/False
     
+    # Modyfikacja w database/models.py, klasa Role, metoda create_tables
+
     @staticmethod
     def create_tables():
         """Tworzy tabele ról w bazie danych"""
@@ -908,6 +912,26 @@ class Role:
             UNIQUE(user_id, role_id)
         )
         ''')
+        
+        # Tabela konfiguracji ograniczeń równoległych zadań
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS workload_limits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            max_implementations INTEGER NOT NULL DEFAULT 1,
+            max_offers INTEGER NOT NULL DEFAULT 2,
+            max_total_projects INTEGER NOT NULL DEFAULT 2
+        )
+        ''')
+        
+        # Dodaj domyślne ograniczenia jeśli tabela jest pusta
+        cursor.execute("SELECT COUNT(*) as count FROM workload_limits")
+        count = cursor.fetchone()['count']
+        
+        if count == 0:
+            cursor.execute('''
+            INSERT INTO workload_limits (max_implementations, max_offers, max_total_projects)
+            VALUES (1, 2, 2)
+            ''')
         
         conn.commit()
         
@@ -952,6 +976,37 @@ class Role:
                 "export_data": True
             }
             user_role.save()
+            
+            # Dodaj nowe role zadaniowe
+            implementation_role = Role(name="Wdrożenia", description="Specjalista od wdrożeń")
+            implementation_role.permissions = {
+                "task_implementation": True
+            }
+            implementation_role.save()
+            
+            offer_role = Role(name="Oferty", description="Specjalista od ofert")
+            offer_role.permissions = {
+                "task_offer": True
+            }
+            offer_role.save()
+            
+            welding_role = Role(name="Spawanie", description="Specjalista od spawania")
+            welding_role.permissions = {
+                "task_welding": True
+            }
+            welding_role.save()
+            
+            gluing_role = Role(name="Klejenie", description="Specjalista od klejenia")
+            gluing_role.permissions = {
+                "task_gluing": True
+            }
+            gluing_role.save()
+            
+            painting_role = Role(name="Malowanie", description="Specjalista od malowania")
+            painting_role.permissions = {
+                "task_painting": True
+            }
+            painting_role.save()
             
             # Przypisz rolę administratora do wszystkich istniejących administratorów
             cursor.execute("SELECT id FROM users WHERE is_admin = 1")
@@ -1178,3 +1233,58 @@ class Role:
 
 # Wywołaj rozszerzenie klasy User
 Role._extend_user_class()
+
+class WorkloadLimits:
+    """Model limitów obciążenia pracą"""
+    
+    def __init__(self, max_implementations=1, max_offers=2, max_total_projects=2, id=None):
+        self.id = id
+        self.max_implementations = max_implementations
+        self.max_offers = max_offers
+        self.max_total_projects = max_total_projects
+    
+    @staticmethod
+    def get_limits():
+        """Pobiera aktualne limity obciążenia pracą"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM workload_limits LIMIT 1")
+        limits_data = cursor.fetchone()
+        
+        if not limits_data:
+            # Jeśli brak rekordów, dodaj domyślny
+            limits = WorkloadLimits()
+            limits.save()
+            return limits
+        
+        return WorkloadLimits(
+            id=limits_data['id'],
+            max_implementations=limits_data['max_implementations'],
+            max_offers=limits_data['max_offers'],
+            max_total_projects=limits_data['max_total_projects']
+        )
+    
+    def save(self):
+        """Zapisuje limity obciążenia pracą"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        if self.id is None:
+            # Nowy rekord
+            cursor.execute('''
+            INSERT INTO workload_limits (max_implementations, max_offers, max_total_projects)
+            VALUES (?, ?, ?)
+            ''', (self.max_implementations, self.max_offers, self.max_total_projects))
+            
+            self.id = cursor.lastrowid
+        else:
+            # Aktualizacja istniejącego rekordu
+            cursor.execute('''
+            UPDATE workload_limits
+            SET max_implementations = ?, max_offers = ?, max_total_projects = ?
+            WHERE id = ?
+            ''', (self.max_implementations, self.max_offers, self.max_total_projects, self.id))
+        
+        conn.commit()
+        return self.id

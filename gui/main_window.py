@@ -10,6 +10,7 @@ from gui.implementation import ImplementationPanel
 from gui.offers import OfferPanel
 from gui.gantt import GanttPanel
 from gui.role_panel import RolePanel
+from gui.workload_settings import WorkloadSettingsPanel
 
 class MainWindow:
     """Klasa głównego okna aplikacji"""
@@ -94,7 +95,9 @@ class MainWindow:
         if self.current_user.is_admin or self.current_user.has_permission("admin_panel"):
             self.admin_panel = AdminPanel(self.notebook, self.current_user)
             self.notebook.add(self.admin_panel, text="Panel Administratora")
-        
+            self.workload_settings_panel = WorkloadSettingsPanel(self.notebook, self.current_user)
+            self.notebook.add(self.workload_settings_panel, text="Limity obciążenia")
+                
         # Panel zarządzania rolami (wymaga uprawnienia manage_roles)
         if self.current_user.is_admin or self.current_user.has_permission("manage_roles"):
             self.role_panel = RolePanel(self.notebook, self.current_user)
