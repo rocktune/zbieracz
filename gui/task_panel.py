@@ -21,7 +21,11 @@ class TaskPanel(ttk.Frame):
         super().__init__(parent, padding=10)
         self.parent = parent
         self.current_user = current_user
+        
+        # Sprawdź uprawnienia
         self.is_admin = is_admin
+        self.can_view_all_tasks = is_admin or current_user.has_permission("view_all_tasks")
+        self.can_export_data = is_admin or current_user.has_permission("export_data")
         
         # Inicjalizacja timera
         self.timer = TaskTimer(self._update_timer_display)
@@ -182,8 +186,8 @@ class TaskPanel(ttk.Frame):
         tasks_frame = ttk.LabelFrame(bottom_frame, text="Historia zadań", padding=10)
         tasks_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Filtr użytkownika (tylko dla admina) - przesuń na górę tabeli
-        if self.is_admin:
+        # Filtr użytkownika (tylko dla admina lub użytkownika z uprawnieniem view_all_tasks)
+        if self.can_view_all_tasks:
             filter_frame = ttk.Frame(tasks_frame)
             filter_frame.pack(fill=tk.X, pady=(0, 10))
             
@@ -197,31 +201,29 @@ class TaskPanel(ttk.Frame):
             )
             self.user_filter_combobox.pack(side=tk.LEFT, padx=5)
             self.user_filter_combobox.bind("<<ComboboxSelected>>", self._on_filter_change)
-            
-            # Przycisk eksportu
-            ttk.Button(
-                filter_frame, 
-                text="Eksportuj do Excel",
-                command=self._export_to_excel
-            ).pack(side=tk.RIGHT, padx=5)
-        else:
-            # Przycisk eksportu dla zwykłego użytkownika
+        
+        # Przycisk eksportu (tylko jeśli ma uprawnienie export_data)
+        if self.can_export_data:
             export_frame = ttk.Frame(tasks_frame)
-            export_frame.pack(fill=tk.X, pady=(0, 10))
+            if not hasattr(self, 'filter_frame'):
+                export_frame.pack(fill=tk.X, pady=(0, 10))
+            else:
+                # Jeśli jest już filtr, dodaj przycisk eksportu do niego
+                export_frame = filter_frame
             
             ttk.Button(
                 export_frame, 
                 text="Eksportuj do Excel",
                 command=self._export_to_excel
             ).pack(side=tk.RIGHT, padx=5)
-        
+
         # Tabela zadań - teraz na całą szerokość
         table_frame = ttk.Frame(tasks_frame)
         table_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         columns = ["id", "start_time", "end_time", "duration", "category", "task_type", "description"]
-        if self.is_admin:
-            columns.insert(1, "user")  # Dodaj kolumnę użytkownika dla admina
+        if self.can_view_all_tasks:
+            columns.insert(1, "user")  # Dodaj kolumnę użytkownika dla admina lub użytkownika z uprawnieniami
             
         self.tasks_tree = ttk.Treeview(
             table_frame,
@@ -229,7 +231,7 @@ class TaskPanel(ttk.Frame):
             show="headings",
             selectmode="browse"
         )
-        
+
         # Nagłówki
         self.tasks_tree.heading("id", text="ID")
         self.tasks_tree.heading("start_time", text="Rozpoczęcie")
@@ -238,10 +240,10 @@ class TaskPanel(ttk.Frame):
         self.tasks_tree.heading("category", text="Kategoria")
         self.tasks_tree.heading("task_type", text="Typ")
         self.tasks_tree.heading("description", text="Opis")
-        
-        if self.is_admin:
+
+        if self.can_view_all_tasks:
             self.tasks_tree.heading("user", text="Użytkownik")
-        
+
         # Szerokości kolumn
         self.tasks_tree.column("id", width=50, minwidth=50)
         self.tasks_tree.column("start_time", width=130, minwidth=130)
@@ -250,20 +252,18 @@ class TaskPanel(ttk.Frame):
         self.tasks_tree.column("category", width=100, minwidth=100)
         self.tasks_tree.column("task_type", width=100, minwidth=100)
         self.tasks_tree.column("description", width=200, minwidth=200)
-        
-        if self.is_admin:
+
+        if self.can_view_all_tasks:
             self.tasks_tree.column("user", width=150, minwidth=150)
-        
-        # Paski przewijania
+
+        # Paski przewijania - tylko pionowy
         y_scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tasks_tree.yview)
-        x_scrollbar = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.tasks_tree.xview)
-        self.tasks_tree.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
-        
+        self.tasks_tree.configure(yscrollcommand=y_scrollbar.set)
+
         # Pakowanie komponentów z paskami przewijania
         self.tasks_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        
+
         # Podwójne kliknięcie do edycji
         self.tasks_tree.bind("<Double-1>", self._on_task_double_click)
     
@@ -272,7 +272,7 @@ class TaskPanel(ttk.Frame):
         # Kategorie i typy zadań są już załadowane jako wartości comboboxów
         
         # Załaduj wdrożenia dla bieżącego użytkownika
-        if self.is_admin:
+        if self.is_admin or self.current_user.has_permission("manage_implementations"):
             implementations = Implementation.get_all()
         else:
             implementations = Implementation.get_by_user_id(self.current_user.id)
@@ -281,7 +281,7 @@ class TaskPanel(ttk.Frame):
         self.implementation_combobox["values"] = list(self.implementations.keys())
         
         # Załaduj oferty dla bieżącego użytkownika
-        if self.is_admin:
+        if self.is_admin or self.current_user.has_permission("manage_offers"):
             offers = Offer.get_all()
         else:
             offers = Offer.get_by_user_id(self.current_user.id)
@@ -289,8 +289,8 @@ class TaskPanel(ttk.Frame):
         self.offers = {f"{offer.id}: {offer.name}": offer for offer in offers}
         self.offer_combobox["values"] = list(self.offers.keys())
         
-        # Załaduj użytkowników (dla admina)
-        if self.is_admin:
+        # Załaduj użytkowników (dla admina lub użytkownika z uprawnieniem view_all_tasks)
+        if self.can_view_all_tasks:
             users = User.get_all_users()
             self.users = {f"{user.id}: {user.first_name} {user.last_name}": user for user in users}
             
@@ -301,7 +301,7 @@ class TaskPanel(ttk.Frame):
         
         # Załaduj zadania
         self._load_tasks()
-    
+   
     def _load_tasks(self):
         """Ładuje zadania do tabeli"""
         # Wyczyść istniejące zadania
@@ -580,13 +580,13 @@ class TaskPanel(ttk.Frame):
         
         if task:
             # Sprawdź czy użytkownik ma uprawnienia do edycji
-            if not self.is_admin and task.user_id != self.current_user.id:
+            if not self.is_admin and not self.current_user.has_permission("view_all_tasks") and task.user_id != self.current_user.id:
                 messagebox.showerror("Brak uprawnień", "Nie możesz edytować tego zadania.")
                 return
             
             # Pokaż okno edycji
             self._show_edit_dialog(task)
-    
+
     def _show_edit_dialog(self, task):
         """Pokazuje okno edycji zadania"""
         # Utwórz okno dialogowe

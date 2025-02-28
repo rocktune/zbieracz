@@ -102,16 +102,17 @@ class OfferPanel(ttk.Frame):
             wraplength=300
         ).pack(pady=5)
         
+
         # Dolny panel (tabela ofert) - na całą szerokość
         offers_frame = ttk.LabelFrame(bottom_frame, text="Lista ofert", padding=10)
         offers_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Filtr i eksport
         filter_frame = ttk.Frame(offers_frame)
         filter_frame.pack(fill=tk.X, pady=(0, 10))
-        
+
         ttk.Label(filter_frame, text="Filtruj po statusie:").pack(side=tk.LEFT, padx=(0, 5))
-        
+
         status_combobox = ttk.Combobox(
             filter_frame, 
             textvariable=self.status_filter_var,
@@ -120,63 +121,62 @@ class OfferPanel(ttk.Frame):
             width=15
         )
         status_combobox.pack(side=tk.LEFT, padx=5)
-        
+
         # Zmiana filtru
         status_combobox.bind("<<ComboboxSelected>>", self._on_filter_change)
-        
+
         # Przycisk eksportu
         ttk.Button(
             filter_frame, 
             text="Eksportuj do Excel",
             command=self._export_to_excel
         ).pack(side=tk.RIGHT, padx=5)
-        
+
+        # Tabela ofert z paskiem przewijania
+        table_frame = ttk.Frame(offers_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
         # Tabela ofert z osobnymi kolumnami dla operacji
         columns = ["id", "name", "status"]
         # Dodaj kolumny dla każdej operacji
         for operation in Offer.OPERATIONS:
             columns.append(operation)
-        
+
         self.offers_tree = ttk.Treeview(
-            offers_frame,
+            table_frame,
             columns=columns,
             show="headings",
             selectmode="browse"
         )
-        
+
         # Nagłówki
         self.offers_tree.heading("id", text="ID")
         self.offers_tree.heading("name", text="Nazwa")
         self.offers_tree.heading("status", text="Status")
-        
+
         # Nagłówki operacji
         for operation in Offer.OPERATIONS:
             self.offers_tree.heading(operation, text=operation)
-        
+
         # Szerokości kolumn
         self.offers_tree.column("id", width=50, minwidth=50)
         self.offers_tree.column("name", width=200, minwidth=150)
         self.offers_tree.column("status", width=100, minwidth=100)
-        
+
         # Szerokości kolumn operacji
         for operation in Offer.OPERATIONS:
             self.offers_tree.column(operation, width=150, minwidth=120)
-        
-        # Paski przewijania
-        table_frame = ttk.Frame(offers_frame)
-        table_frame.pack(fill=tk.BOTH, expand=True)
-        
+
+        # Paski przewijania - tylko pionowy
         y_scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.offers_tree.yview)
-        x_scrollbar = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.offers_tree.xview)
-        self.offers_tree.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
-        
+        self.offers_tree.configure(yscrollcommand=y_scrollbar.set)
+
         self.offers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        
+
         # Podwójne kliknięcie do przypisania użytkowników
         self.offers_tree.bind("<Double-1>", self._on_offer_double_click)
-        
+
         # Pojedyncze kliknięcie do wyboru
         self.offers_tree.bind("<<TreeviewSelect>>", self._on_offer_select)
     
@@ -268,28 +268,120 @@ class OfferPanel(ttk.Frame):
         """Obsługuje zmianę filtru statusu"""
         self._load_offers()
     
+
+
     def _add_offer(self):
         """Dodaje nową ofertę"""
-        # Pobierz dane z formularza
-        name = self.name_entry.get().strip()
-        description = self.description_entry.get().strip()
+        # Utwórz okno dialogowe
+        dialog = tk.Toplevel(self)
+        dialog.title("Dodaj ofertę")
+        dialog.geometry("500x300")
+        dialog.transient(self)
+        dialog.grab_set()
         
+        # Ramka
+        main_frame = ttk.Frame(dialog, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Formularz
+        ttk.Label(main_frame, text="Nazwa:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        name_entry = ttk.Entry(main_frame, width=30)
+        name_entry.grid(row=0, column=1, sticky=tk.W+tk.E, pady=5)
+        
+        ttk.Label(main_frame, text="Opis:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        description_entry = ttk.Entry(main_frame, width=30)
+        description_entry.grid(row=1, column=1, sticky=tk.W+tk.E, pady=5)
+        
+        # Status
+        ttk.Label(main_frame, text="Status:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        status_combobox = ttk.Combobox(
+            main_frame,
+            values=Offer.STATUSES,
+            state="readonly",
+            width=20
+        )
+        status_combobox.set("W trakcie")  # Domyślna wartość
+        status_combobox.grid(row=2, column=1, sticky=tk.W+tk.E, pady=5)
+        
+        # Planowana data rozpoczęcia
+        ttk.Label(main_frame, text="Planowany start (RRRR-MM-DD):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        planned_start_entry = ttk.Entry(main_frame, width=15)
+        planned_start_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # Planowana data zakończenia
+        ttk.Label(main_frame, text="Planowane zakończenie (RRRR-MM-DD):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        planned_end_entry = ttk.Entry(main_frame, width=15)
+        planned_end_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
+        
+        # Przyciski
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.grid(row=5, column=0, columnspan=2, pady=15)
+        
+        ttk.Button(
+            buttons_frame, 
+            text="Zapisz",
+            command=lambda: self._save_new_offer(
+                dialog,
+                name_entry.get().strip(),
+                description_entry.get().strip(),
+                status_combobox.get(),
+                planned_start_entry.get().strip(),
+                planned_end_entry.get().strip()
+            )
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            buttons_frame, 
+            text="Anuluj",
+            command=dialog.destroy
+        ).pack(side=tk.LEFT, padx=5)
+
+    def _save_new_offer(self, dialog, name, description, status, planned_start, planned_end):
+        """Zapisuje nową ofertę"""
+        # Sprawdź czy nazwa jest wprowadzona
         if not name:
             messagebox.showerror("Błąd", "Nazwa oferty nie może być pusta.")
+            return
+        
+        # Sprawdź format dat
+        date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        
+        if planned_start and not date_pattern.match(planned_start):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty rozpoczęcia. Użyj formatu RRRR-MM-DD.")
+            return
+            
+        if planned_end and not date_pattern.match(planned_end):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD.")
+            return
+        
+        # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
+        if planned_start and planned_end and planned_start > planned_end:
+            messagebox.showerror("Błąd", "Data rozpoczęcia nie może być późniejsza niż data zakończenia.")
             return
         
         # Utwórz nową ofertę
         offer = Offer(
             name=name,
-            description=description
+            description=description,
+            status=status
         )
         
-        # Zapisz ofertę
+        # Zapisz ofertę (to utworzy domyślne operacje)
         offer.save()
         
+        # Aktualizuj daty w operacji "Wdrożenie"
+        if "Wdrożenie" in offer.operations:
+            offer.operations["Wdrożenie"]["start_date"] = planned_start
+            offer.operations["Wdrożenie"]["end_date"] = planned_end
+            
+            # Zapisz ponownie ofertę, aby zaktualizować daty operacji
+            offer.save()
+        
         # Wyczyść formularz
-        self.name_entry.delete(0, tk.END)
-        self.description_entry.delete(0, tk.END)
+        # Usunięte, ponieważ zamykamy dialog
+        
+        # Zamknij okno dialogowe
+        dialog.destroy()
         
         # Odśwież listę ofert
         self._load_offers()
@@ -299,7 +391,7 @@ class OfferPanel(ttk.Frame):
             "Sukces", 
             f"Oferta '{name}' została dodana."
         )
-    
+        
     def _edit_offer(self):
         """Edytuje istniejącą ofertę"""
         if not self.selected_offer_id:
@@ -316,7 +408,7 @@ class OfferPanel(ttk.Frame):
         # Utwórz okno dialogowe
         dialog = tk.Toplevel(self)
         dialog.title(f"Edycja oferty: {offer.name}")
-        dialog.geometry("400x200")
+        dialog.geometry("500x300")
         dialog.transient(self)
         dialog.grab_set()
         
@@ -346,9 +438,33 @@ class OfferPanel(ttk.Frame):
         status_combobox.set(offer.status)
         status_combobox.grid(row=2, column=1, sticky=tk.W+tk.E, pady=5)
         
+        # Planowana data rozpoczęcia
+        ttk.Label(main_frame, text="Planowany start (RRRR-MM-DD):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        planned_start_entry = ttk.Entry(main_frame, width=15)
+        
+        # Pobierz datę rozpoczęcia z operacji "Wdrożenie" jeśli istnieje
+        if "Wdrożenie" in offer.operations:
+            start_date = offer.operations["Wdrożenie"].get("start_date", "")
+            if start_date:
+                planned_start_entry.insert(0, start_date)
+        
+        planned_start_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # Planowana data zakończenia
+        ttk.Label(main_frame, text="Planowane zakończenie (RRRR-MM-DD):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        planned_end_entry = ttk.Entry(main_frame, width=15)
+        
+        # Pobierz datę zakończenia z operacji "Wdrożenie" jeśli istnieje
+        if "Wdrożenie" in offer.operations:
+            end_date = offer.operations["Wdrożenie"].get("end_date", "")
+            if end_date:
+                planned_end_entry.insert(0, end_date)
+        
+        planned_end_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
+        
         # Przyciski
         buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.grid(row=3, column=0, columnspan=2, pady=15)
+        buttons_frame.grid(row=5, column=0, columnspan=2, pady=15)
         
         ttk.Button(
             buttons_frame, 
@@ -358,7 +474,9 @@ class OfferPanel(ttk.Frame):
                 offer,
                 name_entry.get().strip(),
                 description_entry.get().strip(),
-                status_combobox.get()
+                status_combobox.get(),
+                planned_start_entry.get().strip(),
+                planned_end_entry.get().strip()
             )
         ).pack(side=tk.LEFT, padx=5)
         
@@ -367,18 +485,46 @@ class OfferPanel(ttk.Frame):
             text="Anuluj",
             command=dialog.destroy
         ).pack(side=tk.LEFT, padx=5)
-    
-    def _save_edited_offer(self, dialog, offer, name, description, status):
+
+    def _save_edited_offer(self, dialog, offer, name, description, status, planned_start, planned_end):
         """Zapisuje edytowaną ofertę"""
         # Sprawdź czy nazwa jest wprowadzona
         if not name:
             messagebox.showerror("Błąd", "Nazwa oferty nie może być pusta.")
             return
         
+        # Sprawdź format dat
+        date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        
+        if planned_start and not date_pattern.match(planned_start):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty rozpoczęcia. Użyj formatu RRRR-MM-DD.")
+            return
+            
+        if planned_end and not date_pattern.match(planned_end):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD.")
+            return
+        
+        # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
+        if planned_start and planned_end and planned_start > planned_end:
+            messagebox.showerror("Błąd", "Data rozpoczęcia nie może być późniejsza niż data zakończenia.")
+            return
+        
         # Aktualizuj ofertę
         offer.name = name
         offer.description = description
         offer.status = status
+        
+        # Aktualizuj daty w operacji "Wdrożenie"
+        if "Wdrożenie" not in offer.operations:
+            offer.operations["Wdrożenie"] = {}
+        
+        # Zachowaj istniejące dane użytkownika dla operacji Wdrożenie
+        user_id = offer.operations["Wdrożenie"].get("user_id")
+        
+        # Ustaw daty
+        offer.operations["Wdrożenie"]["start_date"] = planned_start
+        offer.operations["Wdrożenie"]["end_date"] = planned_end
+        offer.operations["Wdrożenie"]["user_id"] = user_id
         
         # Zapisz ofertę
         offer.save()

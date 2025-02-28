@@ -3,12 +3,13 @@ from tkinter import ttk, messagebox
 from tkinter import filedialog
 from database.db_manager import DBManager
 from utils.auth import AuthManager
-from database.models import User, Task, Implementation, Offer
+from database.models import User, Task, Implementation, Offer, Role
 from gui.task_panel import TaskPanel
 from gui.admin_panel import AdminPanel
 from gui.implementation import ImplementationPanel
 from gui.offers import OfferPanel
 from gui.gantt import GanttPanel
+from gui.role_panel import RolePanel
 
 class MainWindow:
     """Klasa głównego okna aplikacji"""
@@ -52,6 +53,7 @@ class MainWindow:
         Task.create_tables()
         Implementation.create_tables()
         Offer.create_tables()
+        Role.create_tables()  # Dodane tworzenie tabel ról
     
     def _create_widgets(self):
         """Tworzy widgety głównego okna"""
@@ -86,21 +88,29 @@ class MainWindow:
         )
         self.notebook.add(self.task_panel, text="Zadania")
         
-        # Zakładki dla administratora
-        if self.current_user.is_admin:
-            # Panel administratora
+        # Dodaj zakładki na podstawie uprawnień
+        
+        # Panel administratora (wymaga uprawnienia admin_panel)
+        if self.current_user.is_admin or self.current_user.has_permission("admin_panel"):
             self.admin_panel = AdminPanel(self.notebook, self.current_user)
             self.notebook.add(self.admin_panel, text="Panel Administratora")
-            
-            # Panel wdrożeń
+        
+        # Panel zarządzania rolami (wymaga uprawnienia manage_roles)
+        if self.current_user.is_admin or self.current_user.has_permission("manage_roles"):
+            self.role_panel = RolePanel(self.notebook, self.current_user)
+            self.notebook.add(self.role_panel, text="Zarządzanie Rolami")
+        
+        # Panel wdrożeń (wymaga uprawnienia manage_implementations)
+        if self.current_user.is_admin or self.current_user.has_permission("manage_implementations"):
             self.implementation_panel = ImplementationPanel(self.notebook, self.current_user)
             self.notebook.add(self.implementation_panel, text="Wdrożenia")
-            
-            # Panel ofert
+        
+        # Panel ofert (wymaga uprawnienia manage_offers)
+        if self.current_user.is_admin or self.current_user.has_permission("manage_offers"):
             self.offer_panel = OfferPanel(self.notebook, self.current_user)
             self.notebook.add(self.offer_panel, text="Oferty")
         
-        # Wykres Gantta (dla wszystkich)
+        # Wykres Gantta (dostępny dla wszystkich)
         self.gantt_panel = GanttPanel(
             self.notebook, 
             self.current_user, 
@@ -118,6 +128,15 @@ class MainWindow:
             text=f"Zalogowany jako: {self.current_user.username} ({self.current_user.first_name} {self.current_user.last_name})"
         )
         user_label.pack(side=tk.LEFT)
+        
+        # Wyświetl role użytkownika
+        user_roles = self.current_user.get_roles()
+        if user_roles:
+            roles_text = ", ".join([role.name for role in user_roles])
+            ttk.Label(
+                bottom_frame, 
+                text=f"Role: {roles_text}"
+            ).pack(side=tk.LEFT, padx=(10, 0))
         
         # Przycisk wylogowania
         logout_button = ttk.Button(

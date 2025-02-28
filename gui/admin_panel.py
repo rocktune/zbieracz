@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from database.models import User
+from database.models import Role, User
 from database.db_manager import DBManager
 from utils.auth import AuthManager
 
@@ -213,7 +213,7 @@ class AdminPanel(ttk.Frame):
         # Utwórz okno dialogowe
         dialog = tk.Toplevel(self)
         dialog.title("Dodaj użytkownika")
-        dialog.geometry("400x350")
+        dialog.geometry("500x450")  # Zwiększona wysokość na role
         dialog.transient(self)
         dialog.grab_set()
         
@@ -250,6 +250,27 @@ class AdminPanel(ttk.Frame):
             variable=is_admin_var
         ).pack(anchor=tk.W, pady=(5, 10))
         
+        # Role użytkownika
+        roles_frame = ttk.LabelFrame(main_frame, text="Role użytkownika", padding=10)
+        roles_frame.pack(fill=tk.X, pady=(5, 10))
+        
+        # Pobierz wszystkie role
+        roles = Role.get_all_roles()
+        
+        # Zmienne dla checkboxów ról
+        role_vars = {}
+        
+        # Dodaj checkbox dla każdej roli
+        for i, role in enumerate(roles):
+            var = tk.BooleanVar(value=False)
+            role_vars[role.id] = var
+            
+            ttk.Checkbutton(
+                roles_frame,
+                text=f"{role.name}",
+                variable=var
+            ).pack(anchor=tk.W, pady=2)
+        
         # Przyciski
         buttons_frame = ttk.Frame(main_frame)
         buttons_frame.pack(fill=tk.X, pady=10)
@@ -264,7 +285,8 @@ class AdminPanel(ttk.Frame):
                 last_name_entry.get().strip(),
                 password_entry.get(),
                 confirm_password_entry.get(),
-                is_admin_var.get()
+                is_admin_var.get(),
+                role_vars
             )
         ).pack(side=tk.RIGHT, padx=5)
         
@@ -273,8 +295,8 @@ class AdminPanel(ttk.Frame):
             text="Anuluj",
             command=dialog.destroy
         ).pack(side=tk.RIGHT, padx=5)
-    
-    def _save_new_user(self, dialog, username, first_name, last_name, password, confirm_password, is_admin):
+
+    def _save_new_user(self, dialog, username, first_name, last_name, password, confirm_password, is_admin, role_vars):
         """Zapisuje nowego użytkownika"""
         # Sprawdź czy wszystkie pola są wypełnione
         if not (username and first_name and last_name and password and confirm_password):
@@ -291,6 +313,11 @@ class AdminPanel(ttk.Frame):
             messagebox.showerror("Błąd", "Hasło musi mieć co najmniej 6 znaków.")
             return
         
+        # Pobierz wybrane role
+        selected_role_ids = [
+            role_id for role_id, var in role_vars.items() if var.get()
+        ]
+        
         # Próba rejestracji
         user = self.auth_manager.register_user(
             username=username,
@@ -301,6 +328,10 @@ class AdminPanel(ttk.Frame):
         )
         
         if user:
+            # Przypisz role do użytkownika
+            if selected_role_ids:
+                user.set_roles(selected_role_ids)
+            
             # Zamknij okno dialogowe
             dialog.destroy()
             
@@ -317,7 +348,7 @@ class AdminPanel(ttk.Frame):
                 "Błąd", 
                 "Użytkownik o podanej nazwie już istnieje."
             )
-    
+
     def _edit_user(self):
         """Edytuje istniejącego użytkownika"""
         if not self.selected_user_id:
@@ -334,7 +365,7 @@ class AdminPanel(ttk.Frame):
         # Utwórz okno dialogowe
         dialog = tk.Toplevel(self)
         dialog.title(f"Edycja użytkownika: {user.username}")
-        dialog.geometry("400x300")
+        dialog.geometry("500x400")  # Zwiększona wysokość na role
         dialog.transient(self)
         dialog.grab_set()
         
@@ -371,6 +402,31 @@ class AdminPanel(ttk.Frame):
         if user.id == self.current_user.id:
             admin_check.configure(state=tk.DISABLED)
         
+        # Role użytkownika
+        roles_frame = ttk.LabelFrame(main_frame, text="Role użytkownika", padding=10)
+        roles_frame.pack(fill=tk.X, pady=(5, 10))
+        
+        # Pobierz wszystkie role
+        all_roles = Role.get_all_roles()
+        
+        # Pobierz role użytkownika
+        user_roles = user.get_roles()
+        user_role_ids = [role.id for role in user_roles]
+        
+        # Zmienne dla checkboxów ról
+        role_vars = {}
+        
+        # Dodaj checkbox dla każdej roli
+        for i, role in enumerate(all_roles):
+            var = tk.BooleanVar(value=(role.id in user_role_ids))
+            role_vars[role.id] = var
+            
+            ttk.Checkbutton(
+                roles_frame,
+                text=f"{role.name}",
+                variable=var
+            ).pack(anchor=tk.W, pady=2)
+        
         # Przyciski
         buttons_frame = ttk.Frame(main_frame)
         buttons_frame.pack(fill=tk.X, pady=10)
@@ -384,7 +440,8 @@ class AdminPanel(ttk.Frame):
                 username_entry.get().strip(),
                 first_name_entry.get().strip(),
                 last_name_entry.get().strip(),
-                is_admin_var.get()
+                is_admin_var.get(),
+                role_vars
             )
         ).pack(side=tk.RIGHT, padx=5)
         
@@ -393,8 +450,8 @@ class AdminPanel(ttk.Frame):
             text="Anuluj",
             command=dialog.destroy
         ).pack(side=tk.RIGHT, padx=5)
-    
-    def _save_edited_user(self, dialog, user, username, first_name, last_name, is_admin):
+
+    def _save_edited_user(self, dialog, user, username, first_name, last_name, is_admin, role_vars):
         """Zapisuje edytowanego użytkownika"""
         # Sprawdź czy wszystkie pola są wypełnione
         if not (username and first_name and last_name):
@@ -414,9 +471,17 @@ class AdminPanel(ttk.Frame):
         else:
             user.is_admin = is_admin
         
+        # Pobierz wybrane role
+        selected_role_ids = [
+            role_id for role_id, var in role_vars.items() if var.get()
+        ]
+        
         try:
             # Zapisz użytkownika
             user.save()
+            
+            # Przypisz role do użytkownika
+            user.set_roles(selected_role_ids)
             
             # Zamknij okno dialogowe
             dialog.destroy()
@@ -434,7 +499,7 @@ class AdminPanel(ttk.Frame):
                 "Błąd", 
                 f"Nie udało się zaktualizować użytkownika: {str(e)}"
             )
-    
+        
     def _delete_user(self):
         """Usuwa użytkownika"""
         if not self.selected_user_id:

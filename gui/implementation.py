@@ -106,13 +106,13 @@ class ImplementationPanel(ttk.Frame):
         # Dolny panel (tabela wdrożeń) - na całą szerokość
         implementations_frame = ttk.LabelFrame(bottom_frame, text="Lista wdrożeń", padding=10)
         implementations_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Filtr i eksport
         filter_frame = ttk.Frame(implementations_frame)
         filter_frame.pack(fill=tk.X, pady=(0, 10))
-        
+
         ttk.Label(filter_frame, text="Filtruj po statusie:").pack(side=tk.LEFT, padx=(0, 5))
-        
+
         status_combobox = ttk.Combobox(
             filter_frame, 
             textvariable=self.status_filter_var,
@@ -121,63 +121,62 @@ class ImplementationPanel(ttk.Frame):
             width=15
         )
         status_combobox.pack(side=tk.LEFT, padx=5)
-        
+
         # Zmiana filtru
         status_combobox.bind("<<ComboboxSelected>>", self._on_filter_change)
-        
+
         # Przycisk eksportu
         ttk.Button(
             filter_frame, 
             text="Eksportuj do Excel",
             command=self._export_to_excel
         ).pack(side=tk.RIGHT, padx=5)
-        
+
+        # Tabela wdrożeń z paskiem przewijania
+        table_frame = ttk.Frame(implementations_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
         # Tabela wdrożeń z osobnymi kolumnami dla operacji
         columns = ["id", "name", "status"]
         # Dodaj kolumny dla każdej operacji
         for operation in Implementation.OPERATIONS:
             columns.append(operation)
-        
+
         self.implementations_tree = ttk.Treeview(
-            implementations_frame,
+            table_frame,
             columns=columns,
             show="headings",
             selectmode="browse"
         )
-        
+
         # Nagłówki
         self.implementations_tree.heading("id", text="ID")
         self.implementations_tree.heading("name", text="Nazwa")
         self.implementations_tree.heading("status", text="Status")
-        
+
         # Nagłówki operacji
         for operation in Implementation.OPERATIONS:
             self.implementations_tree.heading(operation, text=operation)
-        
+
         # Szerokości kolumn
         self.implementations_tree.column("id", width=50, minwidth=50)
         self.implementations_tree.column("name", width=200, minwidth=150)
         self.implementations_tree.column("status", width=100, minwidth=100)
-        
+
         # Szerokości kolumn operacji
         for operation in Implementation.OPERATIONS:
             self.implementations_tree.column(operation, width=150, minwidth=120)
-        
-        # Paski przewijania
-        table_frame = ttk.Frame(implementations_frame)
-        table_frame.pack(fill=tk.BOTH, expand=True)
-        
+
+        # Paski przewijania - tylko pionowy
         y_scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.implementations_tree.yview)
-        x_scrollbar = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.implementations_tree.xview)
-        self.implementations_tree.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
-        
+        self.implementations_tree.configure(yscrollcommand=y_scrollbar.set)
+
         self.implementations_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        x_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        
+
         # Podwójne kliknięcie do przypisania użytkowników
         self.implementations_tree.bind("<Double-1>", self._on_implementation_double_click)
-        
+
         # Pojedyncze kliknięcie do wyboru
         self.implementations_tree.bind("<<TreeviewSelect>>", self._on_implementation_select)
     
@@ -274,38 +273,74 @@ class ImplementationPanel(ttk.Frame):
         """Obsługuje zmianę filtru statusu"""
         self._load_implementations()
     
+
     def _add_implementation(self):
         """Dodaje nowe wdrożenie"""
-        # Pobierz dane z formularza
-        name = self.name_entry.get().strip()
-        description = self.description_entry.get().strip()
+        # Utwórz okno dialogowe
+        dialog = tk.Toplevel(self)
+        dialog.title("Dodaj wdrożenie")
+        dialog.geometry("500x300")
+        dialog.transient(self)
+        dialog.grab_set()
         
-        if not name:
-            messagebox.showerror("Błąd", "Nazwa wdrożenia nie może być pusta.")
-            return
+        # Ramka
+        main_frame = ttk.Frame(dialog, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Utwórz nowe wdrożenie
-        implementation = Implementation(
-            name=name,
-            description=description
+        # Formularz
+        ttk.Label(main_frame, text="Nazwa:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        name_entry = ttk.Entry(main_frame, width=30)
+        name_entry.grid(row=0, column=1, sticky=tk.W+tk.E, pady=5)
+        
+        ttk.Label(main_frame, text="Opis:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        description_entry = ttk.Entry(main_frame, width=30)
+        description_entry.grid(row=1, column=1, sticky=tk.W+tk.E, pady=5)
+        
+        # Status
+        ttk.Label(main_frame, text="Status:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        status_combobox = ttk.Combobox(
+            main_frame,
+            values=Implementation.STATUSES,
+            state="readonly",
+            width=20
         )
+        status_combobox.set("W trakcie")  # Domyślna wartość
+        status_combobox.grid(row=2, column=1, sticky=tk.W+tk.E, pady=5)
         
-        # Zapisz wdrożenie
-        implementation.save()
+        # Planowana data rozpoczęcia
+        ttk.Label(main_frame, text="Planowany start (RRRR-MM-DD):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        planned_start_entry = ttk.Entry(main_frame, width=15)
+        planned_start_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
         
-        # Wyczyść formularz
-        self.name_entry.delete(0, tk.END)
-        self.description_entry.delete(0, tk.END)
+        # Planowana data zakończenia
+        ttk.Label(main_frame, text="Planowane zakończenie (RRRR-MM-DD):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        planned_end_entry = ttk.Entry(main_frame, width=15)
+        planned_end_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
         
-        # Odśwież listę wdrożeń
-        self._load_implementations()
+        # Przyciski
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.grid(row=5, column=0, columnspan=2, pady=15)
         
-        # Wyświetl komunikat
-        messagebox.showinfo(
-            "Sukces", 
-            f"Wdrożenie '{name}' zostało dodane."
-        )
-    
+        ttk.Button(
+            buttons_frame, 
+            text="Zapisz",
+            command=lambda: self._save_new_implementation(
+                dialog,
+                name_entry.get().strip(),
+                description_entry.get().strip(),
+                status_combobox.get(),
+                planned_start_entry.get().strip(),
+                planned_end_entry.get().strip()
+            )
+        ).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(
+            buttons_frame, 
+            text="Anuluj",
+            command=dialog.destroy
+        ).pack(side=tk.LEFT, padx=5)
+
+
     def _edit_implementation(self):
         """Edytuje istniejące wdrożenie"""
         if not self.selected_implementation_id:
@@ -322,7 +357,7 @@ class ImplementationPanel(ttk.Frame):
         # Utwórz okno dialogowe
         dialog = tk.Toplevel(self)
         dialog.title(f"Edycja wdrożenia: {implementation.name}")
-        dialog.geometry("400x200")
+        dialog.geometry("500x300")
         dialog.transient(self)
         dialog.grab_set()
         
@@ -352,9 +387,33 @@ class ImplementationPanel(ttk.Frame):
         status_combobox.set(implementation.status)
         status_combobox.grid(row=2, column=1, sticky=tk.W+tk.E, pady=5)
         
+        # Planowana data rozpoczęcia
+        ttk.Label(main_frame, text="Planowany start (RRRR-MM-DD):").grid(row=3, column=0, sticky=tk.W, pady=5)
+        planned_start_entry = ttk.Entry(main_frame, width=15)
+        
+        # Pobierz datę rozpoczęcia z operacji "Wdrożenie" jeśli istnieje
+        if "Wdrożenie" in implementation.operations:
+            start_date = implementation.operations["Wdrożenie"].get("start_date", "")
+            if start_date:
+                planned_start_entry.insert(0, start_date)
+        
+        planned_start_entry.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        # Planowana data zakończenia
+        ttk.Label(main_frame, text="Planowane zakończenie (RRRR-MM-DD):").grid(row=4, column=0, sticky=tk.W, pady=5)
+        planned_end_entry = ttk.Entry(main_frame, width=15)
+        
+        # Pobierz datę zakończenia z operacji "Wdrożenie" jeśli istnieje
+        if "Wdrożenie" in implementation.operations:
+            end_date = implementation.operations["Wdrożenie"].get("end_date", "")
+            if end_date:
+                planned_end_entry.insert(0, end_date)
+        
+        planned_end_entry.grid(row=4, column=1, sticky=tk.W, pady=5)
+        
         # Przyciski
         buttons_frame = ttk.Frame(main_frame)
-        buttons_frame.grid(row=3, column=0, columnspan=2, pady=15)
+        buttons_frame.grid(row=5, column=0, columnspan=2, pady=15)
         
         ttk.Button(
             buttons_frame, 
@@ -364,7 +423,9 @@ class ImplementationPanel(ttk.Frame):
                 implementation,
                 name_entry.get().strip(),
                 description_entry.get().strip(),
-                status_combobox.get()
+                status_combobox.get(),
+                planned_start_entry.get().strip(),
+                planned_end_entry.get().strip()
             )
         ).pack(side=tk.LEFT, padx=5)
         
@@ -373,18 +434,99 @@ class ImplementationPanel(ttk.Frame):
             text="Anuluj",
             command=dialog.destroy
         ).pack(side=tk.LEFT, padx=5)
-    
-    def _save_edited_implementation(self, dialog, implementation, name, description, status):
+            
+    def _save_new_implementation(self, dialog, name, description, status, planned_start, planned_end):
+        """Zapisuje nowe wdrożenie"""
+        # Sprawdź czy nazwa jest wprowadzona
+        if not name:
+            messagebox.showerror("Błąd", "Nazwa wdrożenia nie może być pusta.")
+            return
+        
+        # Sprawdź format dat
+        date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        
+        if planned_start and not date_pattern.match(planned_start):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty rozpoczęcia. Użyj formatu RRRR-MM-DD.")
+            return
+            
+        if planned_end and not date_pattern.match(planned_end):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD.")
+            return
+        
+        # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
+        if planned_start and planned_end and planned_start > planned_end:
+            messagebox.showerror("Błąd", "Data rozpoczęcia nie może być późniejsza niż data zakończenia.")
+            return
+        
+        # Utwórz nowe wdrożenie
+        implementation = Implementation(
+            name=name,
+            description=description,
+            status=status
+        )
+        
+        # Zapisz wdrożenie (to utworzy domyślne operacje)
+        implementation.save()
+        
+        # Aktualizuj daty w operacji "Wdrożenie"
+        if "Wdrożenie" in implementation.operations:
+            implementation.operations["Wdrożenie"]["start_date"] = planned_start
+            implementation.operations["Wdrożenie"]["end_date"] = planned_end
+            
+            # Zapisz ponownie wdrożenie, aby zaktualizować daty operacji
+            implementation.save()
+        
+        # Zamknij okno dialogowe
+        dialog.destroy()
+        
+        # Odśwież listę wdrożeń
+        self._load_implementations()
+        
+        # Wyświetl komunikat
+        messagebox.showinfo(
+            "Sukces", 
+            f"Wdrożenie '{name}' zostało dodane."
+        )
+
+    def _save_edited_implementation(self, dialog, implementation, name, description, status, planned_start, planned_end):
         """Zapisuje edytowane wdrożenie"""
         # Sprawdź czy nazwa jest wprowadzona
         if not name:
             messagebox.showerror("Błąd", "Nazwa wdrożenia nie może być pusta.")
             return
         
+        # Sprawdź format dat
+        date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+        
+        if planned_start and not date_pattern.match(planned_start):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty rozpoczęcia. Użyj formatu RRRR-MM-DD.")
+            return
+            
+        if planned_end and not date_pattern.match(planned_end):
+            messagebox.showerror("Błąd", "Nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD.")
+            return
+        
+        # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
+        if planned_start and planned_end and planned_start > planned_end:
+            messagebox.showerror("Błąd", "Data rozpoczęcia nie może być późniejsza niż data zakończenia.")
+            return
+        
         # Aktualizuj wdrożenie
         implementation.name = name
         implementation.description = description
         implementation.status = status
+        
+        # Aktualizuj daty w operacji "Wdrożenie"
+        if "Wdrożenie" not in implementation.operations:
+            implementation.operations["Wdrożenie"] = {}
+        
+        # Zachowaj istniejące dane użytkownika dla operacji Wdrożenie
+        user_id = implementation.operations["Wdrożenie"].get("user_id")
+        
+        # Ustaw daty
+        implementation.operations["Wdrożenie"]["start_date"] = planned_start
+        implementation.operations["Wdrożenie"]["end_date"] = planned_end
+        implementation.operations["Wdrożenie"]["user_id"] = user_id
         
         # Zapisz wdrożenie
         implementation.save()

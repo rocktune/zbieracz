@@ -285,22 +285,26 @@ class GanttPanel(ttk.Frame):
                     end_date = op_data.get("end_date")
                     
                     if user_id == user.id and start_date and end_date:
-                        # Konwertuj daty
-                        start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
-                        end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
-                        
-                        # Sprawdź czy zadanie mieści się w zakresie widocznym
-                        if end_date_obj < self.start_date or start_date_obj > self.end_date:
+                        try:
+                            # Bezpieczna konwersja dat z obsługą błędów
+                            start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+                            end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+                            
+                            # Sprawdź czy zadanie mieści się w zakresie widocznym
+                            if end_date_obj < self.start_date or start_date_obj > self.end_date:
+                                continue
+                            
+                            # Dodaj zadanie
+                            user_tasks.append({
+                                "label": f"{impl.name} - {operation_name}",
+                                "start_date": start_date_obj,
+                                "end_date": end_date_obj,
+                                "type": "Implementation",
+                                "operation": operation_name
+                            })
+                        except ValueError:
+                            # Ignoruj wpisy z nieprawidłowymi datami
                             continue
-                        
-                        # Dodaj zadanie
-                        user_tasks.append({
-                            "label": f"{impl.name} - {operation_name}",
-                            "start_date": start_date_obj,
-                            "end_date": end_date_obj,
-                            "type": "Implementation",
-                            "operation": operation_name
-                        })
             
             # Pobierz oferty
             offers = Offer.get_by_user_id(user.id)
@@ -313,22 +317,26 @@ class GanttPanel(ttk.Frame):
                     end_date = op_data.get("end_date")
                     
                     if user_id == user.id and start_date and end_date:
-                        # Konwertuj daty
-                        start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
-                        end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
-                        
-                        # Sprawdź czy zadanie mieści się w zakresie widocznym
-                        if end_date_obj < self.start_date or start_date_obj > self.end_date:
+                        try:
+                            # Bezpieczna konwersja dat z obsługą błędów
+                            start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+                            end_date_obj = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
+                            
+                            # Sprawdź czy zadanie mieści się w zakresie widocznym
+                            if end_date_obj < self.start_date or start_date_obj > self.end_date:
+                                continue
+                            
+                            # Dodaj zadanie
+                            user_tasks.append({
+                                "label": f"{offer.name} - {operation_name}",
+                                "start_date": start_date_obj,
+                                "end_date": end_date_obj,
+                                "type": "Offer",
+                                "operation": operation_name
+                            })
+                        except ValueError:
+                            # Ignoruj wpisy z nieprawidłowymi datami
                             continue
-                        
-                        # Dodaj zadanie
-                        user_tasks.append({
-                            "label": f"{offer.name} - {operation_name}",
-                            "start_date": start_date_obj,
-                            "end_date": end_date_obj,
-                            "type": "Offer",
-                            "operation": operation_name
-                        })
             
             # Dodaj dane użytkownika, jeśli ma zadania
             if user_tasks:

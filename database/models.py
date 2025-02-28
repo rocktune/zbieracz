@@ -859,4 +859,322 @@ class Offer:
         if self.id is None:
             return False
             
-        conn = DBManager().get_
+        conn = DBManager().get_connection() 
+        cursor = conn.cursor()
+class Role:
+    """Model roli użytkownika"""
+    
+    def __init__(self, name, description, permissions=None, id=None):
+        self.id = id
+        self.name = name
+        self.description = description
+        self.permissions = permissions or {}  # Słownik uprawnień: nazwa_uprawnienia -> True/False
+    
+    @staticmethod
+    def create_tables():
+        """Tworzy tabele ról w bazie danych"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Tabela ról
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT
+        )
+        ''')
+        
+        # Tabela uprawnień dla ról
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role_id INTEGER NOT NULL,
+            permission_name TEXT NOT NULL,
+            permission_value BOOLEAN NOT NULL DEFAULT 0,
+            FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE CASCADE,
+            UNIQUE(role_id, permission_name)
+        )
+        ''')
+        
+        # Tabela przypisań ról do użytkowników
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            role_id INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+            FOREIGN KEY (role_id) REFERENCES roles (id) ON DELETE CASCADE,
+            UNIQUE(user_id, role_id)
+        )
+        ''')
+        
+        conn.commit()
+        
+        # Sprawdź, czy istnieją już jakieś role, jeśli nie, dodaj domyślne
+        cursor.execute("SELECT COUNT(*) as count FROM roles")
+        count = cursor.fetchone()['count']
+        
+        if count == 0:
+            # Dodaj domyślne role
+            admin_role = Role(name="Administrator", description="Pełne uprawnienia administracyjne")
+            admin_role.permissions = {
+                "admin_panel": True,
+                "manage_users": True,
+                "manage_roles": True,
+                "manage_implementations": True,
+                "manage_offers": True,
+                "view_all_tasks": True,
+                "export_data": True
+            }
+            admin_role.save()
+            
+            manager_role = Role(name="Kierownik", description="Zarządzanie projektami i podgląd danych")
+            manager_role.permissions = {
+                "admin_panel": False,
+                "manage_users": False,
+                "manage_roles": False,
+                "manage_implementations": True,
+                "manage_offers": True,
+                "view_all_tasks": True,
+                "export_data": True
+            }
+            manager_role.save()
+            
+            user_role = Role(name="Użytkownik", description="Podstawowe uprawnienia użytkownika")
+            user_role.permissions = {
+                "admin_panel": False,
+                "manage_users": False,
+                "manage_roles": False,
+                "manage_implementations": False,
+                "manage_offers": False,
+                "view_all_tasks": False,
+                "export_data": True
+            }
+            user_role.save()
+            
+            # Przypisz rolę administratora do wszystkich istniejących administratorów
+            cursor.execute("SELECT id FROM users WHERE is_admin = 1")
+            admin_users = cursor.fetchall()
+            
+            for user in admin_users:
+                cursor.execute('''
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (?, ?)
+                ''', (user['id'], admin_role.id))
+            
+            # Przypisz rolę użytkownika do wszystkich pozostałych
+            cursor.execute("SELECT id FROM users WHERE is_admin = 0")
+            regular_users = cursor.fetchall()
+            
+            for user in regular_users:
+                cursor.execute('''
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (?, ?)
+                ''', (user['id'], user_role.id))
+            
+            conn.commit()
+    
+    @staticmethod
+    def get_by_id(role_id):
+        """Pobiera rolę na podstawie ID"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM roles WHERE id = ?", (role_id,))
+        role_data = cursor.fetchone()
+        
+        if not role_data:
+            return None
+        
+        role = Role(
+            id=role_data['id'],
+            name=role_data['name'],
+            description=role_data['description']
+        )
+        
+        # Pobierz uprawnienia roli
+        cursor.execute(
+            "SELECT permission_name, permission_value FROM role_permissions WHERE role_id = ?", 
+            (role_id,)
+        )
+        permissions_data = cursor.fetchall()
+        
+        role.permissions = {
+            p['permission_name']: bool(p['permission_value']) for p in permissions_data
+        }
+        
+        return role
+    
+    @staticmethod
+    def get_by_name(name):
+        """Pobiera rolę na podstawie nazwy"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM roles WHERE name = ?", (name,))
+        role_data = cursor.fetchone()
+        
+        if not role_data:
+            return None
+        
+        return Role.get_by_id(role_data['id'])
+    
+    @staticmethod
+    def get_all_roles():
+        """Pobiera wszystkie role"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM roles ORDER BY name")
+        roles_data = cursor.fetchall()
+        
+        roles = []
+        for role_data in roles_data:
+            role = Role.get_by_id(role_data['id'])
+            roles.append(role)
+        
+        return roles
+    
+    @staticmethod
+    def get_user_roles(user_id):
+        """Pobiera role przypisane do użytkownika"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        SELECT r.* FROM roles r
+        JOIN user_roles ur ON r.id = ur.role_id
+        WHERE ur.user_id = ?
+        ORDER BY r.name
+        ''', (user_id,))
+        
+        roles_data = cursor.fetchall()
+        
+        roles = []
+        for role_data in roles_data:
+            role = Role.get_by_id(role_data['id'])
+            roles.append(role)
+        
+        return roles
+    
+    @staticmethod
+    def set_user_roles(user_id, role_ids):
+        """Ustawia role dla użytkownika"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Usuń obecne role użytkownika
+        cursor.execute("DELETE FROM user_roles WHERE user_id = ?", (user_id,))
+        
+        # Dodaj nowe role
+        for role_id in role_ids:
+            cursor.execute('''
+            INSERT INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+            ''', (user_id, role_id))
+        
+        conn.commit()
+        return True
+    
+    @staticmethod
+    def check_user_permission(user_id, permission_name):
+        """Sprawdza czy użytkownik ma dane uprawnienie"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Sprawdź, czy użytkownik jest adminem (mają wszystkie uprawnienia)
+        cursor.execute("SELECT is_admin FROM users WHERE id = ?", (user_id,))
+        user_data = cursor.fetchone()
+        
+        if user_data and user_data['is_admin']:
+            return True
+        
+        # Sprawdź uprawnienie w rolach użytkownika
+        cursor.execute('''
+        SELECT MAX(rp.permission_value) as has_permission
+        FROM role_permissions rp
+        JOIN user_roles ur ON rp.role_id = ur.role_id
+        WHERE ur.user_id = ? AND rp.permission_name = ?
+        ''', (user_id, permission_name))
+        
+        result = cursor.fetchone()
+        
+        return bool(result['has_permission']) if result and result['has_permission'] is not None else False
+    
+    def save(self):
+        """Zapisuje rolę do bazy danych"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        if self.id is None:
+            # Nowa rola
+            cursor.execute('''
+            INSERT INTO roles (name, description)
+            VALUES (?, ?)
+            ''', (self.name, self.description))
+            
+            self.id = cursor.lastrowid
+        else:
+            # Aktualizacja istniejącej roli
+            cursor.execute('''
+            UPDATE roles
+            SET name = ?, description = ?
+            WHERE id = ?
+            ''', (self.name, self.description, self.id))
+            
+            # Usuń stare uprawnienia
+            cursor.execute("DELETE FROM role_permissions WHERE role_id = ?", (self.id,))
+        
+        # Dodaj uprawnienia
+        for permission_name, permission_value in self.permissions.items():
+            cursor.execute('''
+            INSERT INTO role_permissions (role_id, permission_name, permission_value)
+            VALUES (?, ?, ?)
+            ''', (self.id, permission_name, permission_value))
+        
+        conn.commit()
+        return self.id
+    
+    def delete(self):
+        """Usuwa rolę z bazy danych"""
+        if self.id is None:
+            return False
+            
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Usuń rolę (kaskadowo usunie uprawnienia i przypisania)
+        cursor.execute("DELETE FROM roles WHERE id = ?", (self.id,))
+        conn.commit()
+        
+        return cursor.rowcount > 0
+    
+    # Dodaj do klasy User rozszerzenia związane z rolami
+    @staticmethod
+    def _extend_user_class():
+        """Rozszerza klasę User o metody związane z rolami"""
+        # Te metody zostaną dodane do klasy User w czasie wykonania
+        
+        def get_roles(self):
+            """Pobiera role użytkownika"""
+            return Role.get_user_roles(self.id)
+        
+        def has_permission(self, permission_name):
+            """Sprawdza czy użytkownik ma dane uprawnienie"""
+            # Administratorzy mają wszystkie uprawnienia
+            if self.is_admin:
+                return True
+            return Role.check_user_permission(self.id, permission_name)
+        
+        def set_roles(self, role_ids):
+            """Ustawia role dla użytkownika"""
+            return Role.set_user_roles(self.id, role_ids)
+        
+        # Dodaj metody do klasy User
+        User.get_roles = get_roles
+        User.has_permission = has_permission
+        User.set_roles = set_roles
+
+# Wywołaj rozszerzenie klasy User
+Role._extend_user_class()
