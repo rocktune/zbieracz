@@ -11,6 +11,7 @@ from gui.offers import OfferPanel
 from gui.gantt import GanttPanel
 from gui.role_panel import RolePanel
 from gui.workload_settings import WorkloadSettingsPanel
+from gui.projects_panel import ProjectsPanel
 
 class MainWindow:
     """Klasa głównego okna aplikacji"""
@@ -103,16 +104,11 @@ class MainWindow:
             self.role_panel = RolePanel(self.notebook, self.current_user)
             self.notebook.add(self.role_panel, text="Zarządzanie Rolami")
         
-        # Panel wdrożeń (wymaga uprawnienia manage_implementations)
-        if self.current_user.is_admin or self.current_user.has_permission("manage_implementations"):
-            self.implementation_panel = ImplementationPanel(self.notebook, self.current_user)
-            self.notebook.add(self.implementation_panel, text="Wdrożenia")
-        
-        # Panel ofert (wymaga uprawnienia manage_offers)
-        if self.current_user.is_admin or self.current_user.has_permission("manage_offers"):
-            self.offer_panel = OfferPanel(self.notebook, self.current_user)
-            self.notebook.add(self.offer_panel, text="Oferty")
-        
+        # Panel projektów (wymaga uprawnienia manage_projects)# Zamiast osobnych paneli wdrożeń i ofert, dodaj jeden panel projektów
+        if self.current_user.is_admin or self.current_user.has_permission("manage_implementations") or self.current_user.has_permission("manage_offers"):
+            self.projects_panel = ProjectsPanel(self.notebook, self.current_user)
+            self.notebook.add(self.projects_panel, text="Projekty")
+            
         # Wykres Gantta (dostępny dla wszystkich)
         self.gantt_panel = GanttPanel(
             self.notebook, 

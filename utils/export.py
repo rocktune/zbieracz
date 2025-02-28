@@ -97,29 +97,39 @@ def export_tasks_to_excel(tasks, file_path):
         print(f"Błąd podczas eksportu do Excel: {e}")
         return False
 
-def export_implementations_to_excel(implementations, file_path):
+def export_implementations_to_excel(implementations, file_path, append=False):
     """
     Eksportuje listę wdrożeń do pliku Excel
     
     Args:
         implementations (list): Lista wdrożeń do eksportu
         file_path (str): Ścieżka do pliku wynikowego
+        append (bool): Czy dołączyć do istniejącego pliku
         
     Returns:
         bool: True jeśli eksport się powiódł, False w przeciwnym przypadku
     """
     try:
-        # Utwórz nowy workbook
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Wdrożenia"
+        # Utwórz nowy workbook lub otwórz istniejący
+        if append:
+            try:
+                wb = openpyxl.load_workbook(file_path)
+                # Sprawdź czy arkusz "Wdrożenia" już istnieje, jeśli tak, usuń go
+                if "Wdrożenia" in wb.sheetnames:
+                    del wb["Wdrożenia"]
+            except:
+                wb = openpyxl.Workbook()
+                if "Sheet" in wb.sheetnames:
+                    del wb["Sheet"]
+        else:
+            wb = openpyxl.Workbook()
+        
+        ws = wb.create_sheet("Wdrożenia")
         
         # Ustaw nagłówki
-        headers = ["ID", "Nazwa", "Opis", "Status", "Wdrożenie (Użytkownik)", 
-                   "Wdrożenie (Od)", "Wdrożenie (Do)", "Spawanie (Użytkownik)", 
-                   "Spawanie (Od)", "Spawanie (Do)", "Malowanie (Użytkownik)", 
-                   "Malowanie (Od)", "Malowanie (Do)", "Klejenie (Użytkownik)", 
-                   "Klejenie (Od)", "Klejenie (Do)"]
+        headers = ["ID", "Nazwa", "Opis", "Status", "Data rozpoczęcia", "Data zakończenia", 
+                   "Wdrożenie (Użytkownik)", "Spawanie (Użytkownik)", "Malowanie (Użytkownik)", 
+                   "Klejenie (Użytkownik)"]
         
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col)
@@ -137,23 +147,30 @@ def export_implementations_to_excel(implementations, file_path):
         
         # Wypełnij danymi
         for row, impl in enumerate(implementations, 2):
+            # Pobierz daty głównej operacji
+            start_date = ""
+            end_date = ""
+            if "Wdrożenie" in impl.operations:
+                start_date = impl.operations["Wdrożenie"].get("start_date", "")
+                end_date = impl.operations["Wdrożenie"].get("end_date", "")
+            
             # Podstawowe informacje
             ws.cell(row=row, column=1).value = impl.id
             ws.cell(row=row, column=2).value = impl.name
             ws.cell(row=row, column=3).value = impl.description
             ws.cell(row=row, column=4).value = impl.status
+            ws.cell(row=row, column=5).value = start_date
+            ws.cell(row=row, column=6).value = end_date
             
-            # Operacje
-            col_offset = 5
-            for i, operation in enumerate(Implementation.OPERATIONS):
+            # Operacje - tylko informacje o użytkownikach
+            col_offset = 7
+            for i, operation in enumerate(["Wdrożenie", "Spawanie", "Malowanie", "Klejenie"]):
                 op_data = impl.operations.get(operation, {})
                 user_id = op_data.get('user_id')
                 user = User.get_by_id(user_id) if user_id else None
                 user_name = f"{user.first_name} {user.last_name}" if user else ""
                 
-                ws.cell(row=row, column=col_offset + i*3).value = user_name
-                ws.cell(row=row, column=col_offset + i*3 + 1).value = op_data.get('start_date', '')
-                ws.cell(row=row, column=col_offset + i*3 + 2).value = op_data.get('end_date', '')
+                ws.cell(row=row, column=col_offset + i).value = user_name
         
         # Formatowanie tabeli
         for row in range(2, len(implementations) + 2):
@@ -184,29 +201,39 @@ def export_implementations_to_excel(implementations, file_path):
         print(f"Błąd podczas eksportu do Excel: {e}")
         return False
 
-def export_offers_to_excel(offers, file_path):
+def export_offers_to_excel(offers, file_path, append=False):
     """
     Eksportuje listę ofert do pliku Excel
     
     Args:
         offers (list): Lista ofert do eksportu
         file_path (str): Ścieżka do pliku wynikowego
+        append (bool): Czy dołączyć do istniejącego pliku
         
     Returns:
         bool: True jeśli eksport się powiódł, False w przeciwnym przypadku
     """
     try:
-        # Utwórz nowy workbook
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Oferty"
+        # Utwórz nowy workbook lub otwórz istniejący
+        if append:
+            try:
+                wb = openpyxl.load_workbook(file_path)
+                # Sprawdź czy arkusz "Oferty" już istnieje, jeśli tak, usuń go
+                if "Oferty" in wb.sheetnames:
+                    del wb["Oferty"]
+            except:
+                wb = openpyxl.Workbook()
+                if "Sheet" in wb.sheetnames:
+                    del wb["Sheet"]
+        else:
+            wb = openpyxl.Workbook()
+            
+        ws = wb.create_sheet("Oferty")
         
-        # Ustaw nagłówki (takie same jak dla wdrożeń)
-        headers = ["ID", "Nazwa", "Opis", "Status", "Wdrożenie (Użytkownik)", 
-                   "Wdrożenie (Od)", "Wdrożenie (Do)", "Spawanie (Użytkownik)", 
-                   "Spawanie (Od)", "Spawanie (Do)", "Malowanie (Użytkownik)", 
-                   "Malowanie (Od)", "Malowanie (Do)", "Klejenie (Użytkownik)", 
-                   "Klejenie (Od)", "Klejenie (Do)"]
+        # Ustaw nagłówki
+        headers = ["ID", "Nazwa", "Opis", "Status", "Data rozpoczęcia", "Data zakończenia", 
+                   "Wdrożenie (Użytkownik)", "Spawanie (Użytkownik)", "Malowanie (Użytkownik)", 
+                   "Klejenie (Użytkownik)"]
         
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col)
@@ -224,23 +251,30 @@ def export_offers_to_excel(offers, file_path):
         
         # Wypełnij danymi
         for row, offer in enumerate(offers, 2):
+            # Pobierz daty głównej operacji
+            start_date = ""
+            end_date = ""
+            if "Wdrożenie" in offer.operations:
+                start_date = offer.operations["Wdrożenie"].get("start_date", "")
+                end_date = offer.operations["Wdrożenie"].get("end_date", "")
+            
             # Podstawowe informacje
             ws.cell(row=row, column=1).value = offer.id
             ws.cell(row=row, column=2).value = offer.name
             ws.cell(row=row, column=3).value = offer.description
             ws.cell(row=row, column=4).value = offer.status
+            ws.cell(row=row, column=5).value = start_date
+            ws.cell(row=row, column=6).value = end_date
             
-            # Operacje
-            col_offset = 5
-            for i, operation in enumerate(Offer.OPERATIONS):
+            # Operacje - tylko informacje o użytkownikach
+            col_offset = 7
+            for i, operation in enumerate(["Wdrożenie", "Spawanie", "Malowanie", "Klejenie"]):
                 op_data = offer.operations.get(operation, {})
                 user_id = op_data.get('user_id')
                 user = User.get_by_id(user_id) if user_id else None
                 user_name = f"{user.first_name} {user.last_name}" if user else ""
                 
-                ws.cell(row=row, column=col_offset + i*3).value = user_name
-                ws.cell(row=row, column=col_offset + i*3 + 1).value = op_data.get('start_date', '')
-                ws.cell(row=row, column=col_offset + i*3 + 2).value = op_data.get('end_date', '')
+                ws.cell(row=row, column=col_offset + i).value = user_name
         
         # Formatowanie tabeli
         for row in range(2, len(offers) + 2):

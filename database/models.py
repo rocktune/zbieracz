@@ -165,14 +165,32 @@ class User:
         cursor = conn.cursor()
         
         if self.id is None:
-            # Nowy użytkownik
+            # Nowy użytkownik - znajdź pierwsze wolne ID
+            cursor.execute("SELECT MIN(id) as min_id FROM users")
+            min_id = cursor.fetchone()['min_id']
+            
+            # Jeśli tabela jest pusta, zacznij od 1
+            if min_id is None:
+                next_id = 1
+            else:
+                # Znajdź pierwszą wolną wartość ID
+                cursor.execute("SELECT id FROM users ORDER BY id")
+                existing_ids = [row['id'] for row in cursor.fetchall()]
+                
+                # Zacznij od 1 i szukaj pierwszego wolnego ID
+                next_id = 1
+                while next_id in existing_ids:
+                    next_id += 1
+            
+            # Nowy użytkownik z określonym ID
             cursor.execute('''
-            INSERT INTO users (username, first_name, last_name, password_hash, is_admin, 
-                              password_reset_required, reset_requested)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (self.username, self.first_name, self.last_name, self.password_hash, 
+            INSERT INTO users (id, username, first_name, last_name, password_hash, is_admin, 
+                            password_reset_required, reset_requested)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (next_id, self.username, self.first_name, self.last_name, self.password_hash, 
                 self.is_admin, self.password_reset_required, self.reset_requested))
-            self.id = cursor.lastrowid
+            
+            self.id = next_id
         else:
             # Aktualizacja istniejącego użytkownika
             cursor.execute('''
@@ -1163,13 +1181,30 @@ class Role:
         cursor = conn.cursor()
         
         if self.id is None:
-            # Nowa rola
-            cursor.execute('''
-            INSERT INTO roles (name, description)
-            VALUES (?, ?)
-            ''', (self.name, self.description))
+            # Nowa rola - znajdź pierwsze wolne ID
+            cursor.execute("SELECT MIN(id) as min_id FROM roles")
+            min_id = cursor.fetchone()['min_id']
             
-            self.id = cursor.lastrowid
+            # Jeśli tabela jest pusta, zacznij od 1
+            if min_id is None:
+                next_id = 1
+            else:
+                # Znajdź pierwszą wolną wartość ID
+                cursor.execute("SELECT id FROM roles ORDER BY id")
+                existing_ids = [row['id'] for row in cursor.fetchall()]
+                
+                # Zacznij od 1 i szukaj pierwszego wolnego ID
+                next_id = 1
+                while next_id in existing_ids:
+                    next_id += 1
+            
+            # Nowa rola z określonym ID
+            cursor.execute('''
+            INSERT INTO roles (id, name, description)
+            VALUES (?, ?, ?)
+            ''', (next_id, self.name, self.description))
+            
+            self.id = next_id
         else:
             # Aktualizacja istniejącej roli
             cursor.execute('''
