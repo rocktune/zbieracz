@@ -188,6 +188,8 @@ class RolePanel(ttk.Frame):
             
             self.roles_tree.insert("", "end", values=values)
     
+    # Dodaj to do klasy RolePanel w gui/role_panel.py
+
     def _load_users(self):
         """Ładuje użytkowników do tabeli"""
         # Wyczyść istniejących użytkowników
@@ -206,6 +208,10 @@ class RolePanel(ttk.Frame):
             ]
             
             self.users_tree.insert("", "end", values=values)
+        
+        # Również odśwież checkboxy ról, jeśli jest wybrany użytkownik
+        if self.selected_user_id:
+            self._update_role_checkboxes()
     
     def _update_role_checkboxes(self):
         """Aktualizuje checkboxy ról dla wybranego użytkownika"""

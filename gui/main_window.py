@@ -164,19 +164,44 @@ class MainWindow:
         # Ukryj główne okno
         self.root.withdraw()
         
-        # Zamknij wszystkie otwarte okna poza głównym i root
+        # Zamknij wszystkie otwarte okna poza głównym
         for widget in self.root.winfo_children():
             if isinstance(widget, tk.Toplevel):
                 widget.destroy()
         
-        # Uruchom ponownie logowanie
-        from main import on_login_success, all_windows
-        
         # Utwórz nowe okno logowania
-        login_window = tk.Toplevel(all_windows[0])
+        login_window = tk.Toplevel(self.root)
         from gui.login import LoginWindow
-        login_app = LoginWindow(login_window, on_login_success=on_login_success)
         
+        # Funkcja callback po udanym logowaniu
+        def on_login_after_logout(user):
+            # Zamknij stare główne okno
+            self.root.destroy()
+            
+            # Utwórz nowe główne okno
+            new_root = tk.Toplevel()
+            new_root.withdraw()  # Ukryj tymczasowo
+            
+            # Utwórz nowe główne okno aplikacji
+            new_main_window = tk.Toplevel(new_root)
+            
+            # Inicjalizuj MainWindow
+            from gui.main_window import MainWindow
+            app = MainWindow(new_main_window, user)
+            
+            # Ustaw protokół zamykania
+            new_main_window.protocol("WM_DELETE_WINDOW", lambda: self._on_close_after_logout(new_root, new_main_window))
+        
+        login_app = LoginWindow(login_window, on_login_success=on_login_after_logout)
+
+    def _on_close_after_logout(self, root, window):
+        """Obsługuje zamykanie okna po wylogowaniu"""
+        if messagebox.askyesno("Zamykanie aplikacji", "Czy na pewno chcesz zamknąć aplikację?"):
+            root.destroy()
+            window.destroy()
+            import sys
+            sys.exit(0)
+            
     def _on_close(self):
         """Obsługuje zamykanie okna aplikacji"""
         # Potwierdź wyjście
@@ -185,9 +210,7 @@ class MainWindow:
             for window in self.root.winfo_children():
                 if isinstance(window, tk.Toplevel):
                     window.destroy()
-                    
-            # Zamknij główne okno
-            self.root.destroy()
+            
     def _change_db_path(self):
         """Zmienia ścieżkę do bazy danych"""
         # Pobierz nową ścieżkę

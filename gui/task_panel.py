@@ -428,15 +428,31 @@ class TaskPanel(ttk.Frame):
         implementation_id = None
         offer_id = None
         
+        # Dodaj nazwę wdrożenia/oferty do opisu
         if task_type == "Wdrożenie" and self.implementation_var.get():
             impl = self.implementations.get(self.implementation_var.get())
             if impl:
                 implementation_id = impl.id
+                # Dodaj nazwę wdrożenia do opisu, jeśli opis jest pusty lub użytkownik zgodzi się na zastąpienie
+                if not description or messagebox.askyesno(
+                    "Aktualizacja opisu", 
+                    f"Czy chcesz dodać nazwę wdrożenia '{impl.name}' do opisu?"
+                ):
+                    description = f"Wdrożenie: {impl.name}" + (f" - {description}" if description else "")
         
         if task_type == "Oferta" and self.offer_var.get():
             offer = self.offers.get(self.offer_var.get())
             if offer:
                 offer_id = offer.id
+                # Dodaj nazwę oferty do opisu, jeśli opis jest pusty lub użytkownik zgodzi się na zastąpienie
+                if not description or messagebox.askyesno(
+                    "Aktualizacja opisu", 
+                    f"Czy chcesz dodać nazwę oferty '{offer.name}' do opisu?"
+                ):
+                    description = f"Oferta: {offer.name}" + (f" - {description}" if description else "")
+        
+        # Aktualizuj opis w polu tekstowym
+        self.description_var.set(description)
         
         # Utwórz nowe zadanie
         task = Task(
@@ -553,10 +569,16 @@ class TaskPanel(ttk.Frame):
         if task_type == "Wdrożenie":
             self.implementation_label.grid()
             self.implementation_combobox.grid()
+            
+            # Wyczyść wybór oferty
+            self.offer_var.set("")
         
         elif task_type == "Oferta":
             self.offer_label.grid()
             self.offer_combobox.grid()
+            
+            # Wyczyść wybór wdrożenia
+            self.implementation_var.set("")
     
     def _on_filter_change(self, event):
         """Obsługuje zmianę filtru użytkownika (tylko dla admina)"""
