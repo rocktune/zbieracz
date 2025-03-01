@@ -16,6 +16,11 @@ class GanttPanel(ttk.Frame):
         "Offer": "#90CAF9"        # Jasnoniebieski
     }
     
+    # Dodajemy stałe skali widoku
+    SCALE_DAY = "Dzień"
+    SCALE_WEEK = "Tydzień"
+    SCALE_MONTH = "Miesiąc"
+    
     def __init__(self, parent, current_user, is_admin=False):
         """
         Inicjalizuje panel wykresu Gantta
@@ -37,6 +42,7 @@ class GanttPanel(ttk.Frame):
         
         # Zmienne
         self.user_filter_var = tk.StringVar()
+        self.scale_var = tk.StringVar(value=self.SCALE_MONTH)  # Domyślna skala to miesiąc
         self.canvas_width = 0
         self.canvas_height = 0
         self.day_width = 20  # Szerokość dnia w pikselach
@@ -92,6 +98,19 @@ class GanttPanel(ttk.Frame):
         )
         self.user_filter_combobox.pack(side=tk.LEFT, padx=5)
         
+        # Dodajemy selektor skali wykresu
+        ttk.Label(filter_frame, text="Skala:").pack(side=tk.LEFT, padx=(15, 5))
+        
+        scale_combobox = ttk.Combobox(
+            filter_frame,
+            textvariable=self.scale_var,
+            values=[self.SCALE_DAY, self.SCALE_WEEK, self.SCALE_MONTH],
+            state="readonly",
+            width=10
+        )
+        scale_combobox.pack(side=tk.LEFT, padx=5)
+        scale_combobox.bind("<<ComboboxSelected>>", self._on_scale_change)
+        
         # Przyciski nawigacji
         ttk.Button(
             filter_frame, 
@@ -122,6 +141,14 @@ class GanttPanel(ttk.Frame):
             text=">>",
             width=3,
             command=lambda: self._change_date_range(2)
+        ).pack(side=tk.RIGHT, padx=5)
+        
+        # Przycisk "Dzisiaj"
+        ttk.Button(
+            filter_frame,
+            text="Dzisiaj",
+            width=8,
+            command=self._go_to_today
         ).pack(side=tk.RIGHT, padx=5)
         
         # Aktualizacja daty
@@ -183,21 +210,89 @@ class GanttPanel(ttk.Frame):
         """Obsługuje zmianę filtru użytkownika"""
         self._draw_gantt()
     
+    def _on_scale_change(self, event):
+        """Obsługuje zmianę skali widoku"""
+        # Dostosuj skalę
+        scale = self.scale_var.get()
+        
+        # Dostosuj szerokość dnia w zależności od skali
+        if scale == self.SCALE_DAY:
+            self.day_width = 60  # Szerszy widok dla dni
+            # Ustaw zakres na 7 dni
+            today = datetime.date.today()
+            self.start_date = today
+            self.end_date = today + datetime.timedelta(days=6)
+        elif scale == self.SCALE_WEEK:
+            self.day_width = 30  # Średni widok dla tygodni
+            # Ustaw zakres na 4 tygodnie
+            today = datetime.date.today()
+            # Znajdź początek tygodnia (poniedziałek)
+            start_date = today - datetime.timedelta(days=today.weekday())
+            self.start_date = start_date
+            self.end_date = start_date + datetime.timedelta(days=27)  # 4 tygodnie
+        else:  # Miesiąc
+            self.day_width = 20  # Standardowy widok miesięczny
+            # Ustaw zakres na 3 miesiące
+            self.start_date = self._first_day_of_month(datetime.date.today())
+            self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
+        
+        # Aktualizuj etykietę
+        self._update_date_label()
+        
+        # Ponownie narysuj wykres
+        self._draw_gantt()
+    
     def _update_date_label(self):
         """Aktualizuje etykietę z zakresem dat"""
         start_str = self.start_date.strftime("%d.%m.%Y")
         end_str = self.end_date.strftime("%d.%m.%Y")
         self.date_label.config(text=f"{start_str} - {end_str}")
     
-    def _change_date_range(self, months):
-        """Zmienia zakres dat o podaną liczbę miesięcy"""
-        if months > 0:
-            # Przesuwanie w przód
-            self.start_date = self._add_months(self.start_date, months) 
-            self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
-        else:
-            # Przesuwanie w tył
-            self.start_date = self._add_months(self.start_date, months)
+    def _change_date_range(self, amount):
+        """Zmienia zakres dat o podaną wartość"""
+        scale = self.scale_var.get()
+        
+        if scale == self.SCALE_DAY:
+            # Przesuwanie o dni
+            self.start_date += datetime.timedelta(days=amount * 7)  # Przesuwamy o tygodnie
+            self.end_date += datetime.timedelta(days=amount * 7)
+        elif scale == self.SCALE_WEEK:
+            # Przesuwanie o tygodnie
+            self.start_date += datetime.timedelta(days=amount * 14)  # Przesuwamy o 2 tygodnie
+            self.end_date += datetime.timedelta(days=amount * 14)
+        else:  # Miesiąc
+            # Przesuwanie o miesiące
+            if amount > 0:
+                # Przesuwanie w przód
+                self.start_date = self._add_months(self.start_date, amount)
+                self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
+            else:
+                # Przesuwanie w tył
+                self.start_date = self._add_months(self.start_date, amount)
+                self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
+        
+        # Aktualizuj etykietę
+        self._update_date_label()
+        
+        # Ponownie narysuj wykres
+        self._draw_gantt()
+    
+    def _go_to_today(self):
+        """Przechodzi do dzisiejszej daty"""
+        scale = self.scale_var.get()
+        
+        today = datetime.date.today()
+        
+        if scale == self.SCALE_DAY:
+            self.start_date = today
+            self.end_date = today + datetime.timedelta(days=6)
+        elif scale == self.SCALE_WEEK:
+            # Znajdź początek tygodnia (poniedziałek)
+            start_date = today - datetime.timedelta(days=today.weekday())
+            self.start_date = start_date
+            self.end_date = start_date + datetime.timedelta(days=27)  # 4 tygodnie
+        else:  # Miesiąc
+            self.start_date = self._first_day_of_month(today)
             self.end_date = self._last_day_of_month(self._add_months(self.start_date, 2))
         
         # Aktualizuj etykietę
@@ -349,15 +444,49 @@ class GanttPanel(ttk.Frame):
     
     def _draw_background(self, total_days, rows):
         """Rysuje tło wykresu"""
-        # Siatka pionowa (dni)
+        scale = self.scale_var.get()
+        
+        # Wybierz odstęp linii siatki w zależności od skali
+        if scale == self.SCALE_DAY:
+            grid_spacing = 1  # Linia co dzień
+        elif scale == self.SCALE_WEEK:
+            grid_spacing = 7  # Linia co tydzień
+        else:  # Miesiąc
+            grid_spacing = 1  # Linia co dzień, ale zmieniamy jej styl dla różnych dni
+        
+        # Rysuj siatkę pionową
         for i in range(total_days + 1):
             x = self.margin_left + (i * self.day_width)
+            
+            # Wybierz styl linii w zależności od dnia
+            if scale == self.SCALE_MONTH:
+                current_date = self.start_date + datetime.timedelta(days=i)
+                # Podświetl pierwszy dzień miesiąca i pierwszy dzień tygodnia (poniedziałek)
+                if current_date.day == 1:
+                    line_color = "#444444"  # Ciemny dla pierwszego dnia miesiąca
+                    line_width = 2
+                elif current_date.weekday() == 0:  # Poniedziałek
+                    line_color = "#888888"  # Średni dla poniedziałku
+                    line_width = 1
+                else:
+                    line_color = "#DDDDDD"  # Jasny dla normalnych dni
+                    line_width = 1
+            elif scale == self.SCALE_WEEK and i % 7 == 0:
+                line_color = "#888888"
+                line_width = 1
+            elif scale == self.SCALE_DAY:
+                line_color = "#DDDDDD"
+                line_width = 1
+            else:
+                line_color = "#DDDDDD"
+                line_width = 1
             
             # Linia pionowa
             self.canvas.create_line(
                 x, 0, 
                 x, self.header_height + (rows * self.row_height),
-                fill="#DDDDDD"
+                fill=line_color,
+                width=line_width
             )
         
         # Siatka pozioma (wiersze)
@@ -370,6 +499,25 @@ class GanttPanel(ttk.Frame):
                 self.margin_left + (total_days * self.day_width), y,
                 fill="#DDDDDD"
             )
+        
+        # Dodaj podświetlenie dzisiejszego dnia
+        today = datetime.date.today()
+        if self.start_date <= today <= self.end_date:
+            # Oblicz pozycję dzisiejszego dnia
+            today_offset = (today - self.start_date).days
+            x = self.margin_left + (today_offset * self.day_width)
+            
+            # Narysuj podświetlenie
+            self.canvas.create_rectangle(
+                x, 0,
+                x + self.day_width, self.header_height + (rows * self.row_height),
+                fill="#FFFFDD",  # Jasny żółty
+                outline="",
+                tags="today_highlight"
+            )
+            
+            # Przesuń podświetlenie za tło
+            self.canvas.tag_lower("today_highlight")
     
     def _draw_header(self, total_days):
         """Rysuje nagłówek wykresu"""
@@ -395,6 +543,9 @@ class GanttPanel(ttk.Frame):
         prev_month = None
         month_start_x = 0
         
+        # Format nagłówka zależy od skali
+        scale = self.scale_var.get()
+        
         # Dla każdego dnia
         for i in range(total_days):
             x = self.margin_left + (i * self.day_width)
@@ -405,13 +556,47 @@ class GanttPanel(ttk.Frame):
             # Nazwa dnia tygodnia
             day_name = calendar.day_abbr[current_date.weekday()]
             
-            # Dzień i nazwa dnia
-            self.canvas.create_text(
-                x + (self.day_width // 2), 
-                self.header_height - 15,
-                text=f"{day} {day_name}",
-                font=("Arial", 8)
-            )
+            # Format w zależności od skali
+            if scale == self.SCALE_DAY:
+                # Dla widoku dziennego pokazujemy pełną datę i dzień tygodnia
+                self.canvas.create_text(
+                    x + (self.day_width // 2), 
+                    self.header_height - 15,
+                    text=f"{day} {day_name}",
+                    font=("Arial", 9)
+                )
+                # Dodaj też numer tygodnia
+                week_num = current_date.isocalendar()[1]
+                self.canvas.create_text(
+                    x + (self.day_width // 2), 
+                    self.header_height - 35,
+                    text=f"Tydz. {week_num}",
+                    font=("Arial", 8)
+                )
+            elif scale == self.SCALE_WEEK:
+                # Dla widoku tygodniowego pokazujemy dzień i datę
+                if current_date.weekday() == 0 or i == 0:  # Poniedziałek lub pierwszy dzień
+                    self.canvas.create_text(
+                        x + (self.day_width // 2), 
+                        self.header_height - 15,
+                        text=f"{day} {day_name}",
+                        font=("Arial", 9)
+                    )
+                else:
+                    self.canvas.create_text(
+                        x + (self.day_width // 2), 
+                        self.header_height - 15,
+                        text=f"{day}",
+                        font=("Arial", 9)
+                    )
+            else:  # Miesiąc
+                # Dla widoku miesięcznego pokazujemy dzień i nazwę dnia
+                self.canvas.create_text(
+                    x + (self.day_width // 2), 
+                    self.header_height - 15,
+                    text=f"{day} {day_name}",
+                    font=("Arial", 8)
+                )
             
             # Narysuj nazwę miesiąca jeśli się zmienił
             month = current_date.month
@@ -478,63 +663,3 @@ class GanttPanel(ttk.Frame):
                 
                 if start_offset + task_duration > total_days:
                     task_duration = total_days - start_offset
-                
-                # Oblicz koordynaty
-                x1 = self.margin_left + (start_offset * self.day_width)
-                x2 = x1 + (task_duration * self.day_width)
-                y1 = y + 5
-                y2 = y + self.row_height - 5
-                
-                # Wybierz kolor
-                if task["operation"] in self.COLORS:
-                    color = self.COLORS[task["operation"]]
-                else:
-                    color = self.COLORS[task["type"]]
-                
-                # Narysuj pasek zadania
-                bar_id = self.canvas.create_rectangle(
-                    x1, y1, x2, y2,
-                    fill=color,
-                    outline="#333333"
-                )
-                
-                # Dodaj tooltip
-                tooltip_text = f"{task['label']} ({task['start_date']} - {task['end_date']})"
-                self._add_tooltip(bar_id, tooltip_text)
-    
-    def _add_tooltip(self, widget_id, text):
-        """Dodaje tooltip do widgetu na canvasie"""
-        tooltip = None
-        
-        def enter(event):
-            nonlocal tooltip
-            x, y = event.x, event.y
-            x += self.canvas.winfo_rootx()
-            y += self.canvas.winfo_rooty()
-            
-            # Utwórz tooltip
-            tooltip = tk.Toplevel(self)
-            tooltip.wm_overrideredirect(True)
-            tooltip.wm_geometry(f"+{x+10}+{y+10}")
-            
-            label = ttk.Label(tooltip, text=text, background="#FFFFD0", relief="solid", borderwidth=1)
-            label.pack()
-        
-        def leave(event):
-            nonlocal tooltip
-            if tooltip:
-                tooltip.destroy()
-                tooltip = None
-        
-        def motion(event):
-            nonlocal tooltip
-            if tooltip:
-                x, y = event.x, event.y
-                x += self.canvas.winfo_rootx()
-                y += self.canvas.winfo_rooty()
-                tooltip.wm_geometry(f"+{x+10}+{y+10}")
-        
-        # Podepnij zdarzenia
-        self.canvas.tag_bind(widget_id, "<Enter>", enter)
-        self.canvas.tag_bind(widget_id, "<Leave>", leave)
-        self.canvas.tag_bind(widget_id, "<Motion>", motion)
