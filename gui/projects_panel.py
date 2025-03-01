@@ -772,7 +772,7 @@ class ProjectsPanel(ttk.Frame):
                     f"Dla operacji '{operation_name}' nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD."
                 )
                 return
-            
+
             # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
             if start_date and end_date and start_date > end_date:
                 messagebox.showerror(
@@ -780,7 +780,7 @@ class ProjectsPanel(ttk.Frame):
                     f"Dla operacji '{operation_name}' data rozpoczęcia jest późniejsza niż data zakończenia."
                 )
                 return
-            
+                        
             # Sprawdź czy minimalna liczba dni jest liczbą
             try:
                 min_days_int = int(min_days)
@@ -847,7 +847,17 @@ class ProjectsPanel(ttk.Frame):
             "Sukces", 
             f"Przypisania użytkowników do {project_type_name} '{project.name}' zostały zaktualizowane."
         )
-    
+        print(f"Zapisuję projekt: {project.name}")
+        print(f"Status: {status}")
+        for op_name, op_data in project.operations.items():
+            print(f"Operacja: {op_name}")
+            print(f"  required: {op_data.get('required')}")
+            print(f"  min_days: {op_data.get('min_days')}")
+            print(f"  user_id: {op_data.get('user_id')}")
+            print(f"  start_date: {op_data.get('start_date')}")
+            print(f"  end_date: {op_data.get('end_date')}")
+            print()    
+            
     def _auto_assign_users(self):
         """Automatycznie przydziela użytkowników do projektów z uwzględnieniem wymaganych operacji i minimalnej liczby dni"""
         # Pobierz wszystkich użytkowników
