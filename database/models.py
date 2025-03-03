@@ -481,6 +481,28 @@ class Implementation:
         
         conn.commit()
     
+    def update_implementation_operations_schema():
+        """Ensures the implementation_operations table has all required columns"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Check if 'required' column exists in implementation_operations
+        cursor.execute("PRAGMA table_info(implementation_operations)")
+        columns = cursor.fetchall()
+        column_names = [column[1] for column in columns]
+        
+        # Add 'required' column if it doesn't exist
+        if 'required' not in column_names:
+            cursor.execute('ALTER TABLE implementation_operations ADD COLUMN required BOOLEAN NOT NULL DEFAULT 1')
+        
+        # Add 'min_days' column if it doesn't exist
+        if 'min_days' not in column_names:
+            cursor.execute('ALTER TABLE implementation_operations ADD COLUMN min_days INTEGER NOT NULL DEFAULT 1')
+        
+        conn.commit()
+
+    update_implementation_operations_schema()
+    
     @staticmethod
     def get_by_id(implementation_id):
         """Pobiera wdrożenie na podstawie ID"""
@@ -512,7 +534,9 @@ class Implementation:
             implementation.operations[op_data['operation_name']] = {
                 'user_id': op_data['user_id'],
                 'start_date': op_data['start_date'],
-                'end_date': op_data['end_date']
+                'end_date': op_data['end_date'],
+                'required': bool(op_data['required']),
+                'min_days': op_data['min_days']
             }
         
         return implementation
@@ -619,8 +643,8 @@ class Implementation:
             for operation in self.OPERATIONS:
                 cursor.execute('''
                 INSERT INTO implementation_operations 
-                (implementation_id, operation_name, user_id, start_date, end_date)
-                VALUES (?, ?, NULL, NULL, NULL)
+                (implementation_id, operation_name, user_id, start_date, end_date, required, min_days)
+                VALUES (?, ?, NULL, NULL, NULL, 1, 1)
                 ''', (self.id, operation))
         else:
             # Aktualizacja istniejącego wdrożenia
@@ -632,17 +656,65 @@ class Implementation:
             
             # Aktualizuj operacje
             for operation_name, operation_data in self.operations.items():
+                # Add debug output
+                print(f"Saving operation {operation_name} for implementation {self.id}:")
+                print(f"  Data: {operation_data}")
+                
+                # Get values with defaults if missing
+                user_id = operation_data.get('user_id')
+                start_date = operation_data.get('start_date')
+                end_date = operation_data.get('end_date')
+                required = operation_data.get('required', True)  # Default to True if missing
+                min_days = operation_data.get('min_days', 1)     # Default to 1 if missing
+                
+                # Add more debug output
+                print(f"  Processed values:")
+                print(f"    user_id: {user_id}")
+                print(f"    start_date: {start_date}")
+                print(f"    end_date: {end_date}")
+                print(f"    required: {required}")
+                print(f"    min_days: {min_days}")
+                
+                # Check if the operation exists for this implementation
                 cursor.execute('''
-                UPDATE implementation_operations
-                SET user_id = ?, start_date = ?, end_date = ?
+                SELECT id FROM implementation_operations
                 WHERE implementation_id = ? AND operation_name = ?
-                ''', (
-                    operation_data.get('user_id'), 
-                    operation_data.get('start_date'), 
-                    operation_data.get('end_date'),
-                    self.id, 
-                    operation_name
-                ))
+                ''', (self.id, operation_name))
+                
+                operation_record = cursor.fetchone()
+                
+                if operation_record:
+                    # Update existing operation
+                    cursor.execute('''
+                    UPDATE implementation_operations
+                    SET user_id = ?, start_date = ?, end_date = ?, required = ?, min_days = ?
+                    WHERE implementation_id = ? AND operation_name = ?
+                    ''', (
+                        user_id, 
+                        start_date, 
+                        end_date,
+                        1 if required else 0,  # Convert boolean to 0/1 for SQLite
+                        min_days,
+                        self.id, 
+                        operation_name
+                    ))
+                    print(f"  Updated existing operation record {operation_record['id']}")
+                else:
+                    # Insert new operation
+                    cursor.execute('''
+                    INSERT INTO implementation_operations
+                    (implementation_id, operation_name, user_id, start_date, end_date, required, min_days)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        self.id,
+                        operation_name,
+                        user_id,
+                        start_date,
+                        end_date,
+                        1 if required else 0,  # Convert boolean to 0/1 for SQLite
+                        min_days
+                    ))
+                    print(f"  Inserted new operation record")
         
         conn.commit()
         return self.id
@@ -663,6 +735,7 @@ class Implementation:
         conn.commit()
         
         return cursor.rowcount > 0
+    
 
 
 class Offer:
@@ -701,12 +774,88 @@ class Offer:
             user_id INTEGER,
             start_date TEXT,
             end_date TEXT,
+            required BOOLEAN NOT NULL DEFAULT 1,
+            min_days INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY (offer_id) REFERENCES offers (id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
         )
         ''')
         
+        # Check for existing records and make sure required and min_days exist
+        cursor.execute("PRAGMA table_info(offer_operations)")
+        columns = cursor.fetchall()
+        column_names = [column[1] for column in columns]
+        
+        # If one of the columns doesn't exist, we need to recreate the table with the full schema
+        needs_migration = 'required' not in column_names or 'min_days' not in column_names
+        
+        if needs_migration:
+            print("Migrating offer_operations table to add required and min_days columns...")
+            
+            # Create a backup of the current data
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS offer_operations_backup AS 
+            SELECT * FROM offer_operations
+            ''')
+            
+            # Drop the old table
+            cursor.execute("DROP TABLE offer_operations")
+            
+            # Create the new table with the updated schema
+            cursor.execute('''
+            CREATE TABLE offer_operations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                offer_id INTEGER NOT NULL,
+                operation_name TEXT NOT NULL,
+                user_id INTEGER,
+                start_date TEXT,
+                end_date TEXT,
+                required BOOLEAN NOT NULL DEFAULT 1,
+                min_days INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (offer_id) REFERENCES offers (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
+            )
+            ''')
+            
+            # Copy data from backup, setting defaults for new columns
+            cursor.execute('''
+            INSERT INTO offer_operations (
+                id, offer_id, operation_name, user_id, start_date, end_date, required, min_days
+            )
+            SELECT 
+                id, offer_id, operation_name, user_id, start_date, end_date, 1, 1
+            FROM offer_operations_backup
+            ''')
+            
+            # Drop the backup table
+            cursor.execute("DROP TABLE offer_operations_backup")
+            
+            print("Migration completed.")
+        
         conn.commit()
+        
+    def update_offer_operations_schema():
+        """Ensures the offer_operations table has all required columns"""
+        conn = DBManager().get_connection()
+        cursor = conn.cursor()
+        
+        # Check if 'required' column exists in offer_operations
+        cursor.execute("PRAGMA table_info(offer_operations)")
+        columns = cursor.fetchall()
+        column_names = [column[1] for column in columns]
+        
+        # Add 'required' column if it doesn't exist
+        if 'required' not in column_names:
+            cursor.execute('ALTER TABLE offer_operations ADD COLUMN required BOOLEAN NOT NULL DEFAULT 1')
+        
+        # Add 'min_days' column if it doesn't exist
+        if 'min_days' not in column_names:
+            cursor.execute('ALTER TABLE offer_operations ADD COLUMN min_days INTEGER NOT NULL DEFAULT 1')
+        
+        conn.commit()
+        
+    # Call this function to update schema
+    update_offer_operations_schema()    
     
     @staticmethod
     def get_by_id(offer_id):
@@ -739,7 +888,9 @@ class Offer:
             offer.operations[op_data['operation_name']] = {
                 'user_id': op_data['user_id'],
                 'start_date': op_data['start_date'],
-                'end_date': op_data['end_date']
+                'end_date': op_data['end_date'],
+                'required': bool(op_data['required']),
+                'min_days': op_data['min_days']
             }
         
         return offer
@@ -846,8 +997,8 @@ class Offer:
             for operation in self.OPERATIONS:
                 cursor.execute('''
                 INSERT INTO offer_operations 
-                (offer_id, operation_name, user_id, start_date, end_date)
-                VALUES (?, ?, NULL, NULL, NULL)
+                (offer_id, operation_name, user_id, start_date, end_date, required, min_days)
+                VALUES (?, ?, NULL, NULL, NULL, 1, 1)
                 ''', (self.id, operation))
         else:
             # Aktualizacja istniejącej oferty
@@ -859,17 +1010,65 @@ class Offer:
             
             # Aktualizuj operacje
             for operation_name, operation_data in self.operations.items():
+                # Add debug output
+                print(f"Saving operation {operation_name} for offer {self.id}:")
+                print(f"  Data: {operation_data}")
+                
+                # Get values with defaults if missing
+                user_id = operation_data.get('user_id')
+                start_date = operation_data.get('start_date')
+                end_date = operation_data.get('end_date')
+                required = operation_data.get('required', True)  # Default to True if missing
+                min_days = operation_data.get('min_days', 1)     # Default to 1 if missing
+                
+                # Add more debug output
+                print(f"  Processed values:")
+                print(f"    user_id: {user_id}")
+                print(f"    start_date: {start_date}")
+                print(f"    end_date: {end_date}")
+                print(f"    required: {required}")
+                print(f"    min_days: {min_days}")
+                
+                # Check if the operation exists for this offer
                 cursor.execute('''
-                UPDATE offer_operations
-                SET user_id = ?, start_date = ?, end_date = ?
+                SELECT id FROM offer_operations
                 WHERE offer_id = ? AND operation_name = ?
-                ''', (
-                    operation_data.get('user_id'), 
-                    operation_data.get('start_date'), 
-                    operation_data.get('end_date'),
-                    self.id, 
-                    operation_name
-                ))
+                ''', (self.id, operation_name))
+                
+                operation_record = cursor.fetchone()
+                
+                if operation_record:
+                    # Update existing operation
+                    cursor.execute('''
+                    UPDATE offer_operations
+                    SET user_id = ?, start_date = ?, end_date = ?, required = ?, min_days = ?
+                    WHERE offer_id = ? AND operation_name = ?
+                    ''', (
+                        user_id, 
+                        start_date, 
+                        end_date,
+                        1 if required else 0,  # Convert boolean to 0/1 for SQLite
+                        min_days,
+                        self.id, 
+                        operation_name
+                    ))
+                    print(f"  Updated existing operation record {operation_record['id']}")
+                else:
+                    # Insert new operation
+                    cursor.execute('''
+                    INSERT INTO offer_operations
+                    (offer_id, operation_name, user_id, start_date, end_date, required, min_days)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        self.id,
+                        operation_name,
+                        user_id,
+                        start_date,
+                        end_date,
+                        1 if required else 0,  # Convert boolean to 0/1 for SQLite
+                        min_days
+                    ))
+                    print(f"  Inserted new operation record")
         
         conn.commit()
         return self.id

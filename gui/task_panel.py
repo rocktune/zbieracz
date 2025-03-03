@@ -433,23 +433,15 @@ class TaskPanel(ttk.Frame):
             impl = self.implementations.get(self.implementation_var.get())
             if impl:
                 implementation_id = impl.id
-                # Dodaj nazwę wdrożenia do opisu, jeśli opis jest pusty lub użytkownik zgodzi się na zastąpienie
-                if not description or messagebox.askyesno(
-                    "Aktualizacja opisu", 
-                    f"Czy chcesz dodać nazwę wdrożenia '{impl.name}' do opisu?"
-                ):
-                    description = f"Wdrożenie: {impl.name}" + (f" - {description}" if description else "")
-        
+                # Zawsze używaj nazwy wdrożenia jako opisu
+                description = impl.name
+
         if task_type == "Oferta" and self.offer_var.get():
             offer = self.offers.get(self.offer_var.get())
             if offer:
                 offer_id = offer.id
-                # Dodaj nazwę oferty do opisu, jeśli opis jest pusty lub użytkownik zgodzi się na zastąpienie
-                if not description or messagebox.askyesno(
-                    "Aktualizacja opisu", 
-                    f"Czy chcesz dodać nazwę oferty '{offer.name}' do opisu?"
-                ):
-                    description = f"Oferta: {offer.name}" + (f" - {description}" if description else "")
+                # Zawsze używaj nazwy oferty jako opisu
+                description = offer.name
         
         # Aktualizuj opis w polu tekstowym
         self.description_var.set(description)

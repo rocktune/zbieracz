@@ -7,6 +7,10 @@ from database.models import User, Implementation, Offer
 class GanttPanel(ttk.Frame):
     """Panel wykresu Gantta dla wdrożeń i ofert"""
     
+    MONTHS_PL = ["", "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", 
+             "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"]
+    DAYS_PL = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Ndz"]
+
     COLORS = {
         "Wdrożenie": "#4CAF50",  # Zielony
         "Spawanie": "#2196F3",    # Niebieski
@@ -433,14 +437,14 @@ class GanttPanel(ttk.Frame):
                             # Ignoruj wpisy z nieprawidłowymi datami
                             continue
             
-            # Dodaj dane użytkownika, jeśli ma zadania
-            if user_tasks:
-                gantt_data.append({
-                    "label": user_label,
-                    "tasks": user_tasks
-                })
+            # Dodaj dane użytkownika NAWET jeśli nie ma zadań
+            gantt_data.append({
+                "label": user_label,
+                "tasks": user_tasks
+            })
         
         return gantt_data
+
     
     def _draw_background(self, total_days, rows):
         """Rysuje tło wykresu"""
@@ -553,8 +557,8 @@ class GanttPanel(ttk.Frame):
             # Dzień miesiąca
             day = current_date.day
             
-            # Nazwa dnia tygodnia
-            day_name = calendar.day_abbr[current_date.weekday()]
+            # Nazwa dnia tygodnia (po polsku)
+            day_name = self.DAYS_PL[current_date.weekday()]
             
             # Format w zależności od skali
             if scale == self.SCALE_DAY:
@@ -589,30 +593,38 @@ class GanttPanel(ttk.Frame):
                         text=f"{day}",
                         font=("Arial", 9)
                     )
-            else:  # Miesiąc
-                # Dla widoku miesięcznego pokazujemy dzień i nazwę dnia
+            else:  # Miesiąc - pionowe etykiety dla dni
+                # Dla widoku miesięcznego pokazujemy pionowo
                 self.canvas.create_text(
                     x + (self.day_width // 2), 
-                    self.header_height - 15,
-                    text=f"{day} {day_name}",
+                    self.header_height - 10,
+                    text=f"{day}",
                     font=("Arial", 8)
                 )
+                # Pionowa etykieta dnia tygodnia
+                self.canvas.create_text(
+                    x + (self.day_width // 2), 
+                    self.header_height - 30,
+                    text=f"{day_name}",
+                    font=("Arial", 7),
+                    angle=90  # Pionowy tekst
+                )
             
-            # Narysuj nazwę miesiąca jeśli się zmienił
+            # Narysuj nazwę miesiąca jeśli się zmienił (po polsku)
             month = current_date.month
             
             if prev_month != month:
                 # Zakończ poprzedni miesiąc
                 if prev_month is not None:
                     month_width = x - month_start_x
-                    month_name = calendar.month_name[prev_month]
+                    month_name = self.MONTHS_PL[prev_month]  # Polska nazwa miesiąca
                     year = current_date.year if current_date.month > prev_month else current_date.year - 1
                     
                     self.canvas.create_text(
                         month_start_x + (month_width // 2), 
-                        self.header_height // 2 - 10,
+                        self.header_height // 2 - 25,  # Wyżej, aby uniknąć nakładania
                         text=f"{month_name} {year}",
-                        font=("Arial", 10, "bold")
+                        font=("Arial", 9, "bold")
                     )
                 
                 # Rozpocznij nowy miesiąc
@@ -625,14 +637,14 @@ class GanttPanel(ttk.Frame):
         # Narysuj ostatni miesiąc
         if prev_month is not None:
             month_width = self.margin_left + (total_days * self.day_width) - month_start_x
-            month_name = calendar.month_name[prev_month]
+            month_name = self.MONTHS_PL[prev_month]  # Polska nazwa miesiąca
             year = current_date.year if current_date.month <= prev_month else current_date.year - 1
             
             self.canvas.create_text(
                 month_start_x + (month_width // 2), 
-                self.header_height // 2 - 10,
+                self.header_height // 2 - 25,
                 text=f"{month_name} {year}",
-                font=("Arial", 10, "bold")
+                font=("Arial", 9, "bold")
             )
     
     def _draw_data(self, gantt_data, total_days):
@@ -653,7 +665,7 @@ class GanttPanel(ttk.Frame):
             # Dla każdego zadania
             for task in user_data["tasks"]:
                 # Oblicz pozycję X
-                start_offset = (task["start_date"] - self.start_date).days
+                start_offset = max(0, (task["start_date"] - self.start_date).days)
                 task_duration = (task["end_date"] - task["start_date"]).days + 1
                 
                 # Ogranicz do widocznego zakresu
@@ -663,3 +675,43 @@ class GanttPanel(ttk.Frame):
                 
                 if start_offset + task_duration > total_days:
                     task_duration = total_days - start_offset
+                
+                # Tylko rysuj zadanie, jeśli jest widoczne
+                if task_duration > 0:
+                    # Pozycja X i szerokość
+                    x = self.margin_left + (start_offset * self.day_width)
+                    width = task_duration * self.day_width
+                    
+                    # Wybierz kolor
+                    if task["type"] == "Implementation":
+                        color = self.COLORS["Implementation"]
+                    else:
+                        color = self.COLORS["Offer"]
+                    
+                    # Kolor operacji jeśli jest
+                    if "operation" in task:
+                        if task["operation"] in self.COLORS:
+                            color = self.COLORS[task["operation"]]
+                    
+                    # Narysuj pasek zadania
+                    bar_height = self.row_height - 6
+                    self.canvas.create_rectangle(
+                        x, y + 3,
+                        x + width, y + bar_height + 3,
+                        fill=color,
+                        outline="white",
+                        tags=("task",)
+                    )
+                    
+                    # Dodaj etykietę zadania
+                    # Wyświetlaj etykietę tylko jeśli jest wystarczająca szerokość
+                    if width > 50:
+                        self.canvas.create_text(
+                            x + (width // 2), 
+                            y + (bar_height // 2) + 3,
+                            text=task["label"],
+                            fill="black",
+                            font=("Arial", 8),
+                            width=width - 10,  # Limit szerokości tekstu
+                            tags=("task_label",)
+                        )

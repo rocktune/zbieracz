@@ -5,6 +5,7 @@ import re
 from database.models import Implementation, Offer, User, WorkloadLimits
 from utils.export import export_implementations_to_excel, export_offers_to_excel
 from gui.project_form import ProjectFormWindow
+from tkcalendar import DateEntry
 
 class ProjectsPanel(ttk.Frame):
     """Panel zarządzania projektami (wdrożenia i oferty)"""
@@ -362,33 +363,46 @@ class ProjectsPanel(ttk.Frame):
             if offer:
                 # Pokaż okno przypisania użytkowników
                 self._show_assign_users_dialog(offer, "offer")
-    
+            
     def _on_filter_change(self, event):
         """Obsługuje zmianę filtru"""
         self._load_projects()
         
     def _add_project(self, project_type):
         """
-        Dodaje nowy projekt z użyciem ulepszonego okna formularza
+        Dodaje nowy projekt i od razu pokazuje okno przypisania użytkowników
         
         Args:
             project_type (str): Typ projektu ("implementation" lub "offer")
         """
-        # Utwórz nowe okno formularza projektu
-        ProjectFormWindow(
-            self, 
-            project=None,
-            project_type=project_type,
-            on_save=lambda project: self._on_project_saved()
+        # Określ odpowiednie klasy i nazwy
+        if project_type == "implementation":
+            project_class = Implementation
+            project_name = "Nowe wdrożenie"
+        else:
+            project_class = Offer
+            project_name = "Nowa oferta"
+        
+        # Utwórz nowy projekt
+        project = project_class(
+            name=project_name,
+            description="",
+            status="W trakcie"
         )
+        
+        # Zapisz projekt (to utworzy domyślne operacje)
+        project.save()
+        
+        # Pokaż okno przypisania użytkowników
+        self._show_assign_users_dialog(project, project_type)
 
     def _edit_project(self):
-        """Edytuje istniejący projekt z użyciem ulepszonego okna formularza"""
+        """Edytuje istniejący projekt - otwiera okno przypisania użytkowników"""
         if not self.selected_project_id or not self.selected_project_type:
             messagebox.showinfo("Informacja", "Wybierz projekt do edycji.")
             return
         
-        # Pobierz projekt odpowiedniego typu
+        # Pobierz projekt
         project = None
         if self.selected_project_type == "implementation":
             project = Implementation.get_by_id(self.selected_project_id)
@@ -399,13 +413,8 @@ class ProjectsPanel(ttk.Frame):
             messagebox.showerror("Błąd", "Nie znaleziono projektu.")
             return
         
-        # Utwórz okno formularza projektu do edycji
-        ProjectFormWindow(
-            self, 
-            project=project,
-            project_type=self.selected_project_type,
-            on_save=lambda project: self._on_project_saved()
-        )
+        # Pokaż okno przypisania użytkowników
+        self._show_assign_users_dialog(project, self.selected_project_type)
 
     def _on_project_saved(self):
         """Obsługuje zdarzenie zapisania projektu"""
@@ -529,27 +538,66 @@ class ProjectsPanel(ttk.Frame):
         status_combobox.set(project.status)
         status_combobox.pack(side=tk.LEFT)
         
-        # Daty główne projektu
+        # Daty główne projektu - użyj kalendarza DateEntry
         dates_frame = ttk.Frame(basic_frame)
         dates_frame.pack(fill=tk.X, pady=5)
         
         # Pobierz daty z operacji "Wdrożenie" jeśli istnieją
-        start_date = ""
-        end_date = ""
-        if "Wdrożenie" in project.operations:
-            start_date = project.operations["Wdrożenie"].get("start_date", "")
-            end_date = project.operations["Wdrożenie"].get("end_date", "")
+        main_start_date = None
+        main_end_date = None
         
-        ttk.Label(dates_frame, text="Data rozpoczęcia (RRRR-MM-DD):").pack(side=tk.LEFT, padx=(0, 5))
-        main_start_entry = ttk.Entry(dates_frame, width=15)
-        if start_date:
-            main_start_entry.insert(0, start_date)
+        if "Wdrożenie" in project.operations:
+            start_date_str = project.operations["Wdrożenie"].get("start_date", "")
+            end_date_str = project.operations["Wdrożenie"].get("end_date", "")
+            
+            if start_date_str:
+                try:
+                    main_start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    main_start_date = datetime.date.today()
+            
+            if end_date_str:
+                try:
+                    main_end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    main_end_date = datetime.date.today() + datetime.timedelta(days=30)
+        
+        # Ustaw domyślne daty, jeśli nie ma zapisanych
+        if not main_start_date:
+            main_start_date = datetime.date.today()
+        if not main_end_date:
+            main_end_date = main_start_date + datetime.timedelta(days=30)
+        
+        ttk.Label(dates_frame, text="Data rozpoczęcia:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Użyj DateEntry zamiast zwykłego pola tekstowego
+        main_start_entry = DateEntry(
+            dates_frame,
+            width=12,
+            background='darkblue',
+            foreground='white',
+            borderwidth=2,
+            date_pattern='yyyy-mm-dd',
+            year=main_start_date.year,
+            month=main_start_date.month,
+            day=main_start_date.day
+        )
         main_start_entry.pack(side=tk.LEFT, padx=(0, 15))
         
-        ttk.Label(dates_frame, text="Data zakończenia (RRRR-MM-DD):").pack(side=tk.LEFT, padx=(0, 5))
-        main_end_entry = ttk.Entry(dates_frame, width=15)
-        if end_date:
-            main_end_entry.insert(0, end_date)
+        ttk.Label(dates_frame, text="Data zakończenia:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Użyj DateEntry dla daty końcowej
+        main_end_entry = DateEntry(
+            dates_frame,
+            width=12,
+            background='darkblue',
+            foreground='white',
+            borderwidth=2,
+            date_pattern='yyyy-mm-dd',
+            year=main_end_date.year,
+            month=main_end_date.month,
+            day=main_end_date.day
+        )
         main_end_entry.pack(side=tk.LEFT)
         
         # Operacje
@@ -560,18 +608,19 @@ class ProjectsPanel(ttk.Frame):
         headers_frame = ttk.Frame(operations_frame)
         headers_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(headers_frame, text="Operacja", width=15).grid(row=0, column=0, padx=5)
-        ttk.Label(headers_frame, text="Użytkownik", width=30).grid(row=0, column=1, padx=5)
-        ttk.Label(headers_frame, text="Od (RRRR-MM-DD)", width=15).grid(row=0, column=2, padx=5)
-        ttk.Label(headers_frame, text="Do (RRRR-MM-DD)", width=15).grid(row=0, column=3, padx=5)
-        ttk.Label(headers_frame, text="Wymagana", width=10).grid(row=0, column=4, padx=5)
-        ttk.Label(headers_frame, text="Min. dni", width=10).grid(row=0, column=5, padx=5)
+        ttk.Label(headers_frame, text="Operacja", width=15).grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(headers_frame, text="Użytkownik", width=30).grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(headers_frame, text="Od", width=15).grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(headers_frame, text="Do", width=15).grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(headers_frame, text="Wymagana", width=10).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(headers_frame, text="Min. dni", width=10).grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
         
         # Słownik przechowujący UI dla operacji
         operation_ui = {}
         
         # Stwórz UI dla każdej operacji
-        for i, operation_name in enumerate(["Wdrożenie", "Spawanie", "Malowanie", "Klejenie"]):
+        operations = ["Wdrożenie", "Spawanie", "Malowanie", "Klejenie"]
+        for i, operation_name in enumerate(operations):
             op_frame = ttk.Frame(operations_frame)
             op_frame.pack(fill=tk.X, pady=5)
             
@@ -583,15 +632,35 @@ class ProjectsPanel(ttk.Frame):
             # Dane operacji
             op_data = project.operations.get(operation_name, {})
             user_id = op_data.get("user_id")
-            op_start_date = op_data.get("start_date", "")
-            op_end_date = op_data.get("end_date", "")
-            
-            # Domyślnie wszystkie operacje są wymagane
             is_required = op_data.get("required", True)
             min_days = op_data.get("min_days", 1)
             
+            # Daty operacji
+            op_start_date = None
+            op_end_date = None
+            
+            start_date_str = op_data.get("start_date", "")
+            end_date_str = op_data.get("end_date", "")
+            
+            # Przekształć string daty na obiekt date
+            if start_date_str:
+                try:
+                    op_start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    op_start_date = main_start_date  # Użyj głównej daty jako fallback
+            else:
+                op_start_date = main_start_date
+                
+            if end_date_str:
+                try:
+                    op_end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    op_end_date = main_end_date  # Użyj głównej daty jako fallback
+            else:
+                op_end_date = main_end_date
+            
             # Elementy UI
-            ttk.Label(op_frame, text=operation_label, width=15).grid(row=0, column=0, pady=5, padx=5)
+            ttk.Label(op_frame, text=operation_label, width=15).grid(row=0, column=0, pady=5, padx=5, sticky=tk.W)
             
             # Combobox użytkowników z filtrowaniem po odpowiedniej roli
             user_var = tk.StringVar()
@@ -644,25 +713,43 @@ class ProjectsPanel(ttk.Frame):
                         user_var.set(option)
                         break
             
-            user_combobox.grid(row=0, column=1, pady=5, padx=5)
+            user_combobox.grid(row=0, column=1, pady=5, padx=5, sticky=tk.W)
             
-            # Daty - jako pola tekstowe
-            start_entry = ttk.Entry(op_frame, width=15)
-            if op_start_date:
-                start_entry.insert(0, op_start_date)
-            start_entry.grid(row=0, column=2, pady=5, padx=5)
+            # Daty - teraz używamy DateEntry
+            # Data rozpoczęcia
+            start_date_entry = DateEntry(
+                op_frame,
+                width=12,
+                background='darkblue',
+                foreground='white',
+                borderwidth=2,
+                date_pattern='yyyy-mm-dd',
+                year=op_start_date.year,
+                month=op_start_date.month,
+                day=op_start_date.day
+            )
+            start_date_entry.grid(row=0, column=2, pady=5, padx=5, sticky=tk.W)
             
-            end_entry = ttk.Entry(op_frame, width=15)
-            if op_end_date:
-                end_entry.insert(0, op_end_date)
-            end_entry.grid(row=0, column=3, pady=5, padx=5)
+            # Data zakończenia
+            end_date_entry = DateEntry(
+                op_frame,
+                width=12,
+                background='darkblue',
+                foreground='white',
+                borderwidth=2,
+                date_pattern='yyyy-mm-dd',
+                year=op_end_date.year,
+                month=op_end_date.month,
+                day=op_end_date.day
+            )
+            end_date_entry.grid(row=0, column=3, pady=5, padx=5, sticky=tk.W)
             
             # Checkbox czy operacja jest wymagana
             required_var = tk.BooleanVar(value=is_required)
             ttk.Checkbutton(
                 op_frame, 
                 variable=required_var
-            ).grid(row=0, column=4, pady=5, padx=5)
+            ).grid(row=0, column=4, pady=5, padx=5, sticky=tk.W)
             
             # Pole dla minimalnej liczby dni
             min_days_var = tk.StringVar(value=str(min_days))
@@ -673,18 +760,19 @@ class ProjectsPanel(ttk.Frame):
                 increment=1,
                 textvariable=min_days_var,
                 width=5
-            ).grid(row=0, column=5, pady=5, padx=5)
+            ).grid(row=0, column=5, pady=5, padx=5, sticky=tk.W)
             
             # Zapisz UI dla operacji
             operation_ui[operation_name] = {
                 "user_var": user_var,
-                "start_entry": start_entry,
-                "end_entry": end_entry,
+                "start_date_entry": start_date_entry,
+                "end_date_entry": end_date_entry,
                 "required_var": required_var,
                 "min_days_var": min_days_var
             }
-    
-        # Przyciski
+        
+        # IMPORTANT: This is the ONLY buttons frame, moved outside of the loop
+        # Moving this out of the loop and fixing indentation
         buttons_frame = ttk.Frame(form_frame)
         buttons_frame.pack(fill=tk.X, pady=10)
         
@@ -693,8 +781,8 @@ class ProjectsPanel(ttk.Frame):
             project,
             project_type,
             status_combobox.get(),
-            main_start_entry.get().strip(),
-            main_end_entry.get().strip(),
+            main_start_entry.get_date().strftime("%Y-%m-%d"),  # Pobierz datę z DateEntry
+            main_end_entry.get_date().strftime("%Y-%m-%d"),    # Pobierz datę z DateEntry
             operation_ui
         )
         
@@ -753,34 +841,26 @@ class ProjectsPanel(ttk.Frame):
                 except:
                     pass
             
-            start_date = ui["start_entry"].get().strip()
-            end_date = ui["end_entry"].get().strip()
+            # Pobierz daty z kontrolek DateEntry
+            try:
+                start_date = ui["start_date_entry"].get_date().strftime("%Y-%m-%d")
+                end_date = ui["end_date_entry"].get_date().strftime("%Y-%m-%d")
+            except AttributeError:
+                # Fallback na wypadek problemu z DateEntry - powinno być naprawione
+                start_date = main_start
+                end_date = main_end
+            
             is_required = ui["required_var"].get()
             min_days = ui["min_days_var"].get()
             
-            # Sprawdź format dat
-            if start_date and not date_pattern.match(start_date):
-                messagebox.showerror(
-                    "Błąd", 
-                    f"Dla operacji '{operation_name}' nieprawidłowy format daty rozpoczęcia. Użyj formatu RRRR-MM-DD."
-                )
-                return
-                
-            if end_date and not date_pattern.match(end_date):
-                messagebox.showerror(
-                    "Błąd", 
-                    f"Dla operacji '{operation_name}' nieprawidłowy format daty zakończenia. Użyj formatu RRRR-MM-DD."
-                )
-                return
-
             # Sprawdź czy data rozpoczęcia jest wcześniejsza niż data zakończenia
-            if start_date and end_date and start_date > end_date:
+            if start_date > end_date:
                 messagebox.showerror(
                     "Błąd", 
                     f"Dla operacji '{operation_name}' data rozpoczęcia jest późniejsza niż data zakończenia."
                 )
                 return
-                        
+            
             # Sprawdź czy minimalna liczba dni jest liczbą
             try:
                 min_days_int = int(min_days)
@@ -796,7 +876,7 @@ class ProjectsPanel(ttk.Frame):
             # Aktualizuj operację
             if operation_name not in project.operations:
                 project.operations[operation_name] = {}
-                
+                    
             # Użyj głównych dat dla operacji "Wdrożenie"
             if operation_name == "Wdrożenie":
                 project.operations[operation_name] = {
@@ -847,19 +927,9 @@ class ProjectsPanel(ttk.Frame):
             "Sukces", 
             f"Przypisania użytkowników do {project_type_name} '{project.name}' zostały zaktualizowane."
         )
-        print(f"Zapisuję projekt: {project.name}")
-        print(f"Status: {status}")
-        for op_name, op_data in project.operations.items():
-            print(f"Operacja: {op_name}")
-            print(f"  required: {op_data.get('required')}")
-            print(f"  min_days: {op_data.get('min_days')}")
-            print(f"  user_id: {op_data.get('user_id')}")
-            print(f"  start_date: {op_data.get('start_date')}")
-            print(f"  end_date: {op_data.get('end_date')}")
-            print()    
             
     def _auto_assign_users(self):
-        """Automatycznie przydziela użytkowników do projektów z uwzględnieniem wymaganych operacji i minimalnej liczby dni"""
+        """Automatycznie przydziela użytkowników do projektów z zachowaniem ustawień"""
         # Pobierz wszystkich użytkowników
         users = User.get_all_users()
         
@@ -881,17 +951,15 @@ class ProjectsPanel(ttk.Frame):
         if not messagebox.askyesno(
             "Potwierdzenie",
             "Czy na pewno chcesz automatycznie przydzielić użytkowników do projektów? "
-            "Istniejące przypisania zostaną nadpisane.\n\n"
-            "Uwzględnione zostaną tylko zaznaczone jako wymagane operacje, "
-            "a długość operacji wyniknie z ustawionej minimalnej liczby dni."
+            "Istniejące przypisania użytkowników zostaną nadpisane, ale zachowane zostaną "
+            "ustawienia wymaganych operacji i minimalne liczby dni."
         ):
             return
         
         # Pobierz limity obciążenia
         workload_limits = WorkloadLimits.get_limits()
         
-        # Inicjalizuj obciążenie użytkowników
-        # słownik user_id -> słownik z licznikami wdrożeń, ofert i całkowitych projektów oraz datami zajętymi
+        # Inicjalizuj obciążenie użytkowników i umiejętności
         user_load = {}
         user_skills = {}
         
@@ -933,23 +1001,28 @@ class ProjectsPanel(ttk.Frame):
         self._calculate_current_workload(implementations, offers, user_load)
         
         # Posortuj wdrożenia według daty rozpoczęcia
-        implementations.sort(key=lambda impl: impl.operations.get("Wdrożenie", {}).get("start_date", "9999-99-99"))
+        implementations.sort(key=lambda impl: impl.operations.get("Wdrożenie", {}).get("start_date") or "9999-99-99")
         
         # Posortuj oferty według daty rozpoczęcia
-        offers.sort(key=lambda offer: offer.operations.get("Wdrożenie", {}).get("start_date", "9999-99-99"))
+        offers.sort(key=lambda offer: offer.operations.get("Wdrożenie", {}).get("start_date") or "9999-99-99")
         
-        # Najpierw przydziel główne operacje wdrożeń
+        # Przetwarzamy wdrożenia - KLUCZOWY FIX: wykonaj kopię całego słownika operacji
         for impl in implementations:
-            # Pobierz zakres dat głównego wdrożenia
-            main_op = impl.operations.get("Wdrożenie", {})
-            main_start = main_op.get("start_date")
-            main_end = main_op.get("end_date")
+            # Zrób kopię operacji, aby zachować ustawienia
+            operations_backup = {}
+            for op_name, op_data in impl.operations.items():
+                operations_backup[op_name] = op_data.copy() if op_data else {}
             
-            # Sprawdź czy operacja Wdrożenie jest wymagana
-            is_implementation_required = main_op.get("required", True)
+            # Najpierw przetwarzamy główną operację wdrożenia
+            main_op_data = operations_backup.get("Wdrożenie", {})
+            main_start = main_op_data.get("start_date")
+            main_end = main_op_data.get("end_date")
+            is_required = main_op_data.get("required", True)
+            min_days = main_op_data.get("min_days", 1)
             
-            if not main_start or not main_end or not is_implementation_required:
-                continue  # Pomijamy wdrożenia bez dat lub bez wymagania głównej operacji
+            if not main_start or not main_end or not is_required:
+                # Pomijamy wdrożenia bez dat lub niewymagane
+                continue
             
             # Znajdź najlepszego użytkownika do głównej operacji wdrożenia
             best_user_id = self._find_best_user(
@@ -957,21 +1030,81 @@ class ProjectsPanel(ttk.Frame):
             )
             
             if best_user_id:
-                impl.operations["Wdrożenie"]["user_id"] = best_user_id
+                # Ustaw użytkownika w operacji, zachowując wszystkie pozostałe wartości
+                main_op_data["user_id"] = best_user_id
+                impl.operations["Wdrożenie"] = main_op_data
+                
+                # Aktualizuj obciążenie użytkownika
                 self._update_user_workload(user_load, best_user_id, "implementation", main_start, main_end)
+            
+            # Przetwarzamy pozostałe operacje
+            for operation_name in ["Spawanie", "Malowanie", "Klejenie"]:
+                op_data = operations_backup.get(operation_name, {})
+                is_required = op_data.get("required", True)
+                min_days = op_data.get("min_days", 1)
+                
+                if not is_required:
+                    # Przywróć operację z kopii zapasowej
+                    impl.operations[operation_name] = op_data
+                    continue
+                
+                # Określ typ umiejętności potrzebnej do operacji
+                skill_type = ""
+                if operation_name == "Spawanie":
+                    skill_type = "welding"
+                elif operation_name == "Malowanie":
+                    skill_type = "painting"
+                elif operation_name == "Klejenie":
+                    skill_type = "gluing"
+                
+                # Wyznacz daty dla operacji z uwzględnieniem min_days
+                op_start = main_start
+                
+                try:
+                    start_date_obj = datetime.datetime.strptime(op_start, "%Y-%m-%d").date()
+                    end_date_obj = start_date_obj + datetime.timedelta(days=min_days-1)
+                    op_end = end_date_obj.strftime("%Y-%m-%d")
+                    
+                    if op_end > main_end:
+                        op_end = main_end
+                except ValueError:
+                    op_start = main_start
+                    op_end = main_end
+                
+                # Znajdź najlepszego użytkownika
+                best_user_id = self._find_best_user(
+                    skill_type, op_start, op_end, user_load, user_skills, workload_limits
+                )
+                
+                if best_user_id:
+                    # Aktualizuj tylko user_id, start_date i end_date, zachowując inne wartości
+                    op_data["user_id"] = best_user_id
+                    op_data["start_date"] = op_start
+                    op_data["end_date"] = op_end
+                    
+                    # Przywróć operację z aktualizowanymi danymi
+                    impl.operations[operation_name] = op_data
+                    
+                    # Aktualizuj obciążenie
+                    self._update_user_workload(user_load, best_user_id, "specialist", op_start, op_end)
         
-        # Następnie przydziel główne operacje ofert
+        # Podobne podejście dla ofert
         for offer in offers:
-            # Pobierz zakres dat głównej oferty
-            main_op = offer.operations.get("Wdrożenie", {})
-            main_start = main_op.get("start_date")
-            main_end = main_op.get("end_date")
+            # Zrób kopię operacji, aby zachować ustawienia
+            operations_backup = {}
+            for op_name, op_data in offer.operations.items():
+                operations_backup[op_name] = op_data.copy() if op_data else {}
             
-            # Sprawdź czy operacja Wdrożenie jest wymagana
-            is_implementation_required = main_op.get("required", True)
+            # Najpierw przetwarzamy główną operację oferty
+            main_op_data = operations_backup.get("Wdrożenie", {})
+            main_start = main_op_data.get("start_date")
+            main_end = main_op_data.get("end_date")
+            is_required = main_op_data.get("required", True)
+            min_days = main_op_data.get("min_days", 1)
             
-            if not main_start or not main_end or not is_implementation_required:
-                continue  # Pomijamy oferty bez dat lub bez wymagania głównej operacji
+            if not main_start or not main_end or not is_required:
+                # Pomijamy oferty bez dat lub niewymagane
+                continue
             
             # Znajdź najlepszego użytkownika do głównej operacji oferty
             best_user_id = self._find_best_user(
@@ -979,30 +1112,22 @@ class ProjectsPanel(ttk.Frame):
             )
             
             if best_user_id:
-                offer.operations["Wdrożenie"]["user_id"] = best_user_id
+                # Ustaw użytkownika w operacji, zachowując wszystkie pozostałe wartości
+                main_op_data["user_id"] = best_user_id
+                offer.operations["Wdrożenie"] = main_op_data
+                
+                # Aktualizuj obciążenie użytkownika
                 self._update_user_workload(user_load, best_user_id, "offer", main_start, main_end)
-        
-        # Przydziel pozostałe operacje dla wdrożeń
-        for impl in implementations:
-            # Pobierz zakres dat głównego wdrożenia
-            main_op = impl.operations.get("Wdrożenie", {})
-            main_start = main_op.get("start_date")
-            main_end = main_op.get("end_date")
             
-            if not main_start or not main_end:
-                continue  # Pomijamy wdrożenia bez dat
-            
-            # Przydziel użytkowników do pozostałych operacji
+            # Przetwarzamy pozostałe operacje
             for operation_name in ["Spawanie", "Malowanie", "Klejenie"]:
-                # Sprawdź czy operacja jest wymagana
-                op_data = impl.operations.get(operation_name, {})
+                op_data = operations_backup.get(operation_name, {})
                 is_required = op_data.get("required", True)
+                min_days = op_data.get("min_days", 1)
                 
                 if not is_required:
-                    # Jeśli operacja nie jest wymagana, wyczyść przypisanie użytkownika
-                    op_data["user_id"] = None
-                    op_data["start_date"] = None
-                    op_data["end_date"] = None
+                    # Przywróć operację z kopii zapasowej
+                    offer.operations[operation_name] = op_data
                     continue
                 
                 # Określ typ umiejętności potrzebnej do operacji
@@ -1014,108 +1139,35 @@ class ProjectsPanel(ttk.Frame):
                 elif operation_name == "Klejenie":
                     skill_type = "gluing"
                 
-                # Pobierz minimalną liczbę dni dla operacji
-                min_days = op_data.get("min_days", 1)
-                
-                # Wyznacz daty dla operacji
-                # Start po głownym starcie, zakończenie przed głównym końcem
-                # Uwzględnij minimalną liczbę dni
-                
-                # Zacznij od dat głównej operacji
+                # Wyznacz daty dla operacji z uwzględnieniem min_days
                 op_start = main_start
                 
-                # Oblicz datę końcową dodając minimalną liczbę dni
                 try:
                     start_date_obj = datetime.datetime.strptime(op_start, "%Y-%m-%d").date()
                     end_date_obj = start_date_obj + datetime.timedelta(days=min_days-1)
                     op_end = end_date_obj.strftime("%Y-%m-%d")
                     
-                    # Upewnij się, że data końcowa nie przekracza głównej daty końcowej
                     if op_end > main_end:
                         op_end = main_end
                 except ValueError:
-                    # Jeśli coś pójdzie nie tak z datami, użyj głównych dat
                     op_start = main_start
                     op_end = main_end
                 
-                # Przypisz użytkownika
+                # Znajdź najlepszego użytkownika
                 best_user_id = self._find_best_user(
                     skill_type, op_start, op_end, user_load, user_skills, workload_limits
                 )
                 
                 if best_user_id:
-                    impl.operations[operation_name]["user_id"] = best_user_id
-                    impl.operations[operation_name]["start_date"] = op_start
-                    impl.operations[operation_name]["end_date"] = op_end
-                    # Operacje specjalistyczne nie zwiększają licznika projektów, tylko obciążenie dzienne
-                    self._update_user_workload(user_load, best_user_id, "specialist", op_start, op_end)
-        
-        # Przydziel pozostałe operacje dla ofert
-        for offer in offers:
-            # Pobierz zakres dat głównej oferty
-            main_op = offer.operations.get("Wdrożenie", {})
-            main_start = main_op.get("start_date")
-            main_end = main_op.get("end_date")
-            
-            if not main_start or not main_end:
-                continue  # Pomijamy oferty bez dat
-            
-            # Przydziel użytkowników do pozostałych operacji
-            for operation_name in ["Spawanie", "Malowanie", "Klejenie"]:
-                # Sprawdź czy operacja jest wymagana
-                op_data = offer.operations.get(operation_name, {})
-                is_required = op_data.get("required", True)
-                
-                if not is_required:
-                    # Jeśli operacja nie jest wymagana, wyczyść przypisanie użytkownika
-                    op_data["user_id"] = None
-                    op_data["start_date"] = None
-                    op_data["end_date"] = None
-                    continue
-                
-                # Określ typ umiejętności potrzebnej do operacji
-                skill_type = ""
-                if operation_name == "Spawanie":
-                    skill_type = "welding"
-                elif operation_name == "Malowanie":
-                    skill_type = "painting"
-                elif operation_name == "Klejenie":
-                    skill_type = "gluing"
-                
-                # Pobierz minimalną liczbę dni dla operacji
-                min_days = op_data.get("min_days", 1)
-                
-                # Wyznacz daty dla operacji
-                # Start po głownym starcie, zakończenie przed głównym końcem
-                # Uwzględnij minimalną liczbę dni
-                
-                # Zacznij od dat głównej operacji
-                op_start = main_start
-                
-                # Oblicz datę końcową dodając minimalną liczbę dni
-                try:
-                    start_date_obj = datetime.datetime.strptime(op_start, "%Y-%m-%d").date()
-                    end_date_obj = start_date_obj + datetime.timedelta(days=min_days-1)
-                    op_end = end_date_obj.strftime("%Y-%m-%d")
+                    # Aktualizuj tylko user_id, start_date i end_date, zachowując inne wartości
+                    op_data["user_id"] = best_user_id
+                    op_data["start_date"] = op_start
+                    op_data["end_date"] = op_end
                     
-                    # Upewnij się, że data końcowa nie przekracza głównej daty końcowej
-                    if op_end > main_end:
-                        op_end = main_end
-                except ValueError:
-                    # Jeśli coś pójdzie nie tak z datami, użyj głównych dat
-                    op_start = main_start
-                    op_end = main_end
-                
-                # Przypisz użytkownika
-                best_user_id = self._find_best_user(
-                    skill_type, op_start, op_end, user_load, user_skills, workload_limits
-                )
-                
-                if best_user_id:
-                    offer.operations[operation_name]["user_id"] = best_user_id
-                    offer.operations[operation_name]["start_date"] = op_start
-                    offer.operations[operation_name]["end_date"] = op_end
-                    # Operacje specjalistyczne nie zwiększają licznika projektów, tylko obciążenie dzienne
+                    # Przywróć operację z aktualizowanymi danymi
+                    offer.operations[operation_name] = op_data
+                    
+                    # Aktualizuj obciążenie
                     self._update_user_workload(user_load, best_user_id, "specialist", op_start, op_end)
         
         # Zapisz wszystkie wdrożenia
@@ -1133,7 +1185,7 @@ class ProjectsPanel(ttk.Frame):
         messagebox.showinfo(
             "Sukces", 
             "Automatyczne przydzielanie użytkowników do projektów zostało zakończone.\n"
-            "Przydzielono tylko wymagane operacje z uwzględnieniem minimalnej liczby dni."
+            "Przydzielono tylko wymagane operacje z zachowaniem minimalnej liczby dni."
         )
         
     def _calculate_current_workload(self, implementations, offers, user_load):

@@ -211,6 +211,11 @@ class MainWindow:
                 if isinstance(window, tk.Toplevel):
                     window.destroy()
             
+            # Zakończ aplikację
+            self.root.destroy()
+            import sys
+            sys.exit(0)
+            
     def _change_db_path(self):
         """Zmienia ścieżkę do bazy danych"""
         # Pobierz nową ścieżkę
